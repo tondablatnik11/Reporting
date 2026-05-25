@@ -37,16 +37,36 @@ export default function UploadPage() {
     let day = new Date().getDate();
 
     if (typeof excelDate === 'number') {
+      // Excel serial date
       const utcDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
       year = utcDate.getUTCFullYear();
       month = utcDate.getUTCMonth();
       day = utcDate.getUTCDate();
-    } else if (typeof excelDate === 'string' && excelDate.includes('.')) {
-      const parts = excelDate.split('.');
-      if (parts.length >= 3) {
-        year = parseInt(parts[2].substring(0,4), 10);
-        month = parseInt(parts[1], 10) - 1;
-        day = parseInt(parts[0], 10);
+    } else if (typeof excelDate === 'string') {
+      if (excelDate.includes('/')) {
+        // MM/DD/YYYY format (VEKP, LTAP export)
+        const parts = excelDate.split('/');
+        if (parts.length >= 3) {
+          month = parseInt(parts[0], 10) - 1; // MM
+          day = parseInt(parts[1], 10);        // DD
+          year = parseInt(parts[2].substring(0, 4), 10); // YYYY
+        }
+      } else if (excelDate.includes('.')) {
+        // DD.MM.YYYY format
+        const parts = excelDate.split('.');
+        if (parts.length >= 3) {
+          day = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          year = parseInt(parts[2].substring(0, 4), 10);
+        }
+      } else if (excelDate.includes('-')) {
+        // YYYY-MM-DD (ISO)
+        const parts = excelDate.split('-');
+        if (parts.length >= 3) {
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          day = parseInt(parts[2], 10);
+        }
       }
     }
 
@@ -76,6 +96,7 @@ export default function UploadPage() {
   // Save LTAP data to Supabase
   const saveLtapToSupabase = async (json: any[], batchId: string) => {
     const rows = json.map(row => {
+      // AJ = 'Confirmation date_1' (MM/DD/YYYY), AK = 'Confirmation time_1'
       const confirmedAt = parseExcelDateTime(
         row['Confirmation date_1'] || row['Confirmation date'],
         row['Confirmation time_1'] || row['Confirmation time']
@@ -108,16 +129,17 @@ export default function UploadPage() {
   // Save VEKP data to Supabase
   const saveVekpToSupabase = async (json: any[], batchId: string) => {
     const rows = json.map(row => {
-      const createdAt = parseExcelDateTime(row['Created On'], row['Time']);
-      createdAt.setHours(createdAt.getHours() + 2); // VEKP +2h
+      // U = 'Changed On' (MM/DD/YYYY), V = 'Time of change'
+      const changedAt = parseExcelDateTime(row['Changed On'], row['Time of change']);
+      changedAt.setHours(changedAt.getHours() + 2); // VEKP +2h
       return {
         batch_id: batchId,
         internal_hu_number: String(row['Internal HU number'] || ''),
         handling_unit: row['Handling Unit'] ? String(row['Handling Unit']) : null,
         created_by: row['Created By'] ? String(row['Created By']) : null,
         packer_sap_id: String(row['Changed By'] || row['Created By'] || ''),
-        created_at: createdAt.toISOString(),
-        packed_at: createdAt.toISOString(),
+        created_at: changedAt.toISOString(),
+        packed_at: changedAt.toISOString(),
         total_weight: Number(row['Allowed Weight']) || Number(row['Total Weight']) || null,
         weight_unit: row['Unit of Weight'] ? String(row['Unit of Weight']) : null,
         delivery: row['Delivery'] ? String(row['Delivery']) : null,
@@ -208,7 +230,11 @@ export default function UploadPage() {
               to_number: String(row['Transfer Order Number']),
               operator: String(row['User_1'] || row['User']),
               quantity: Number(row['Dest.target quantity']) || 0,
-              confirmed_at: parseExcelDateTime(row['Confirmation date_1'] || row['Confirmation date'], row['Confirmation time_1'] || row['Confirmation time']),
+              // AJ = Confirmation date_1 (MM/DD/YYYY), AK = Confirmation time_1
+              confirmed_at: parseExcelDateTime(
+                row['Confirmation date_1'] || row['Confirmation date'],
+                row['Confirmation time_1'] || row['Confirmation time']
+              ),
             })).filter(r => r.to_number && r.to_number !== "undefined");
 
             addPickingData(parsedData);
@@ -220,12 +246,13 @@ export default function UploadPage() {
           } else if (filename.includes("VEKP")) {
             importType = "PACKING_HEADERS";
             parsedData = json.map(row => {
-              const dt = parseExcelDateTime(row['Created On'], row['Time']);
+              // U = 'Changed On' (MM/DD/YYYY), V = 'Time of change'
+              const dt = parseExcelDateTime(row['Changed On'], row['Time of change']);
               dt.setHours(dt.getHours() + 2); // VEKP +2h
               return {
                 internal_hu: String(row['Internal HU number']),
                 hu_number: String(row['Handling Unit']),
-                operator: String(row['Changed By'] || ''),  // FIXED: Changed By (column T)
+                operator: String(row['Changed By'] || ''), // sloupec T
                 quantity: 0,
                 created_at: dt,
               };
