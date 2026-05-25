@@ -1,0 +1,2 @@
+export ANTHROPIC_BASE_URL="https://anthropic-api.com"
+export ANTHROPIC_AUTH_TOKEN="sk-ant-api03-CI0JoQgbdDdTSe1MNhQNoEx300MmboiIAEgCFDTj5Fsd5bz39FibQe-hhaAbQXEJBurIgxv3R91RaJ6heFo77A-gWvZZiXL"
