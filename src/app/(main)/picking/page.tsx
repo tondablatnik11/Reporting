@@ -27,7 +27,7 @@ export default function PickingPage() {
   const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period), [pickingData, packingData, period]);
 
   const totalKs = pickingData.reduce((s, r) => s + r.quantity, 0);
-  const totalTOs = new Set(pickingData.map(r => r.to_number)).size;
+  const totalTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
   const uniqueOperators = new Set(pickingData.filter(r => r.operator && r.quantity > 0).map(r => r.operator)).size;
 
   // Operator grouped chart data (TO per operator per time slot)
@@ -59,7 +59,7 @@ export default function PickingPage() {
       if (!opTOs.has(timeKey)) opTOs.set(timeKey, new Map());
       const slotMap = opTOs.get(timeKey)!;
       if (!slotMap.has(p.operator)) slotMap.set(p.operator, new Set());
-      slotMap.get(p.operator)!.add(p.to_number);
+      slotMap.get(p.operator)!.add(`${p.to_number}-${p.to_item || Math.random()}`);
     });
 
     const ops = new Set<string>();

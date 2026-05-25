@@ -21,7 +21,7 @@ export default function DashboardPage() {
 
   pickingData.forEach(p => {
     totalPicking += p.quantity;
-    globalPickingTOs.add(p.to_number);
+    globalPickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
   });
   packingData.forEach(p => {
     if (p.created_at) {

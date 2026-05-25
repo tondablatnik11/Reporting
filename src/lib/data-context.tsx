@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState } from "react";
 
 export type PickingRecord = {
   to_number: string;
+  to_item?: string;
   operator: string;
   quantity: number;
   confirmed_at: Date;

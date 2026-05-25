@@ -49,7 +49,7 @@ export function getPeriodLabel(period: Period): string {
 async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
   const { data, error } = await supabase
     .from("ltap_picking")
-    .select("tanum, picker_sap_id, dest_target_qty, confirmed_at")
+    .select("tanum, tapos, picker_sap_id, dest_target_qty, confirmed_at")
     .gte("confirmed_at", from)
     .lte("confirmed_at", to)
     .not("picker_sap_id", "is", null)
@@ -62,6 +62,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
 
   return (data || []).map((r: any) => ({
     to_number: r.tanum,
+    to_item: r.tapos,
     operator: r.picker_sap_id || "",
     quantity: r.dest_target_qty || 0,
     confirmed_at: new Date(r.confirmed_at),
@@ -129,15 +130,16 @@ export function usePeriodData(
   }, [period]);
 
   // Merge: DB data + any local-only records not yet in DB
-  // (deduplicate by to_number for picking, internal_hu for packing AND filter by period)
+  // (deduplicate by tanum+tapos for picking, internal_hu for packing AND filter by period)
   const pickingData = useMemo(() => {
     const { from, to } = getPeriodRange(period);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
-    const dbKeys = new Set(dbPicking.map(r => r.to_number));
+    const dbKeys = new Set(dbPicking.map(r => `${r.to_number}-${r.to_item || '1'}`));
     const localOnly = localPicking.filter(r => {
-      if (dbKeys.has(r.to_number)) return false;
+      const key = `${r.to_number}-${r.to_item || '1'}`;
+      if (dbKeys.has(key)) return false;
       if (!r.confirmed_at) return false;
       const time = new Date(r.confirmed_at).getTime();
       return time >= fromTime && time <= toTime;
@@ -186,7 +188,7 @@ export function aggregateToChartData(
       const slot = getSlot(p.confirmed_at);
       if (chartDataMap.has(slot)) {
         chartDataMap.get(slot).picking += p.quantity;
-        chartDataMap.get(slot).pickingTOsSet.add(p.to_number);
+        chartDataMap.get(slot).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
       }
     });
     packingData.forEach(p => {
@@ -220,7 +222,7 @@ export function aggregateToChartData(
       const d = new Date(p.confirmed_at).getDay() || 7;
       if (map.has(d)) {
         map.get(d).picking += p.quantity;
-        map.get(d).pickingTOsSet.add(p.to_number);
+        map.get(d).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
       }
     });
     packingData.forEach(p => {
@@ -246,7 +248,7 @@ export function aggregateToChartData(
       const d = new Date(p.confirmed_at).getDate();
       if (map.has(d)) {
         map.get(d).picking += p.quantity;
-        map.get(d).pickingTOsSet.add(p.to_number);
+        map.get(d).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
       }
     });
     packingData.forEach(p => {
@@ -266,7 +268,7 @@ export function aggregateToChartData(
     const key = new Date(p.confirmed_at).toISOString().substring(0, 7);
     if (!map.has(key)) map.set(key, { time: key.substring(5), fullTime: key, picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>() });
     map.get(key).picking += p.quantity;
-    map.get(key).pickingTOsSet.add(p.to_number);
+    map.get(key).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
   });
   packingData.forEach(p => {
     if (!p.created_at) return;
@@ -290,7 +292,7 @@ export function aggregateShiftStats(pickingData: PickingRecord[], packingData: P
     const shift = getShiftLabel(new Date(p.confirmed_at));
     const t = shift === "A" ? a : b;
     t.pickingKs += p.quantity;
-    t.pickingTOs.add(p.to_number);
+    t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
     if (p.operator) t.operators.add(p.operator);
   });
   packingData.forEach(p => {
