@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Clock, Save } from "lucide-react";
-import { getISOWeekNumber } from "@/lib/data-context";
+import { getISOWeekNumber, getShiftConfig } from "@/lib/data-context";
 
 export default function ShiftsPage() {
   const currentWeek = getISOWeekNumber(new Date());
@@ -14,8 +14,12 @@ export default function ShiftsPage() {
     afternoonStart: "13:45",
     afternoonEnd: "21:45",
     breakMinutes: 30,
-    evenWeekShiftAMorning: true, // Even weeks: Shift A = morning
+    evenWeekShiftAMorning: true,
   });
+
+  useEffect(() => {
+    setShiftConfig(getShiftConfig());
+  }, []);
 
   const [saved, setSaved] = useState(false);
 

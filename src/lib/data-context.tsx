@@ -62,20 +62,40 @@ export function getISOWeekNumber(date: Date): number {
   return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
-export function isMorningShift(date: Date): boolean {
-  const h = date.getHours();
-  const m = date.getMinutes();
-  return (h * 60 + m) < (13 * 60 + 45);
+export function getShiftConfig() {
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('hellmann_shifts');
+      if (stored) return JSON.parse(stored);
+    } catch(e) {}
+  }
+  return {
+    morningStart: "05:45",
+    morningEnd: "13:45",
+    afternoonStart: "13:45",
+    afternoonEnd: "21:45",
+    breakMinutes: 30,
+    evenWeekShiftAMorning: true,
+  };
 }
 
-// Returns "A" or "B" based on the date's time + week number
+export function isMorningShift(date: Date): boolean {
+  const config = getShiftConfig();
+  const h = date.getHours();
+  const m = date.getMinutes();
+  const [endH, endM] = config.morningEnd.split(':').map(Number);
+  return (h * 60 + m) < (endH * 60 + endM);
+}
+
 export function getShiftLabel(date: Date): "A" | "B" {
+  const config = getShiftConfig();
   const weekNum = getISOWeekNumber(date);
   const isEvenWeek = weekNum % 2 === 0;
   const morning = isMorningShift(date);
-  // Even week: Shift A = morning, Shift B = afternoon
-  // Odd week: Shift A = afternoon, Shift B = morning
-  if (isEvenWeek) {
+  // Based on configuration:
+  const shiftAIsMorning = config.evenWeekShiftAMorning ? isEvenWeek : !isEvenWeek;
+  
+  if (shiftAIsMorning) {
     return morning ? "A" : "B";
   } else {
     return morning ? "B" : "A";
