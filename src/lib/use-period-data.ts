@@ -71,7 +71,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
 async function fetchPackingFromDb(from: string, to: string): Promise<PackingRecord[]> {
   const { data, error } = await supabase
     .from("vekp_packing_headers")
-    .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material")
+    .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, vepo_packing_items(packed_quantity, material)")
     .gte("packed_at", from)
     .lte("packed_at", to)
     .not("packer_sap_id", "is", null)
@@ -82,15 +82,22 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
     return [];
   }
 
-  return (data || []).map((r: any) => ({
-    internal_hu: r.internal_hu_number,
-    hu_number: r.handling_unit,
-    operator: r.packer_sap_id || "",
-    weight: r.total_weight || 0,
-    quantity: 0, // joined from VEPO if needed
-    created_at: new Date(r.packed_at),
-    material: r.packaging_material,
-  }));
+  return (data || []).map((r: any) => {
+    // Sum quantities from joined VEPO items
+    const vepoItems = Array.isArray(r.vepo_packing_items) ? r.vepo_packing_items : [];
+    const totalQuantity = vepoItems.reduce((sum: number, item: any) => sum + (Number(item.packed_quantity) || 0), 0);
+    const material = vepoItems.length > 0 ? vepoItems[0].material : r.packaging_material;
+
+    return {
+      internal_hu: r.internal_hu_number,
+      hu_number: r.handling_unit,
+      operator: r.packer_sap_id || "",
+      weight: r.total_weight || 0,
+      quantity: totalQuantity,
+      created_at: new Date(r.packed_at),
+      material: material,
+    };
+  });
 }
 
 // Main hook - ALWAYS fetches from Supabase, merges local (unsaved) data on top.
