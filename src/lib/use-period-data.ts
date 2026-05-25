@@ -13,8 +13,8 @@ import {
 export type Period = "day" | "week" | "month" | "all";
 
 // Returns [from, to] ISO date strings based on period
-export function getPeriodRange(period: Period): { from: string; to: string } {
-  const now = new Date();
+export function getPeriodRange(period: Period, selectedDate?: string): { from: string; to: string } {
+  const now = selectedDate ? new Date(selectedDate) : new Date();
   const to = new Date(now);
   to.setHours(23, 59, 59, 999);
 
@@ -106,33 +106,38 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
 export function usePeriodData(
   period: Period,
   localPicking: PickingRecord[],
-  localPacking: PackingRecord[]
+  localPacking: PackingRecord[],
+  selectedDate?: string
 ) {
   const [dbPicking, setDbPicking] = useState<PickingRecord[]>([]);
   const [dbPacking, setDbPacking] = useState<PackingRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { from, to } = getPeriodRange(period);
+    let active = true;
+    const { from, to } = getPeriodRange(period, selectedDate);
     setLoading(true);
 
     Promise.all([
       fetchPickingFromDb(from, to),
       fetchPackingFromDb(from, to),
     ]).then(([picking, packing]) => {
+      if (!active) return;
       setDbPicking(picking);
       setDbPacking(packing);
       setLoading(false);
     }).catch((err) => {
+      if (!active) return;
       console.error("DB fetch error:", err);
       setLoading(false);
     });
-  }, [period]);
+    return () => { active = false; };
+  }, [period, selectedDate]);
 
   // Merge: DB data + any local-only records not yet in DB
   // (deduplicate by tanum+tapos for picking, internal_hu for packing AND filter by period)
   const pickingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period);
+    const { from, to } = getPeriodRange(period, selectedDate);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -145,10 +150,10 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPicking, ...localOnly];
-  }, [dbPicking, localPicking, period]);
+  }, [dbPicking, localPicking, period, selectedDate]);
 
   const packingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period);
+    const { from, to } = getPeriodRange(period, selectedDate);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -160,7 +165,7 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPacking, ...localOnly];
-  }, [dbPacking, localPacking, period]);
+  }, [dbPacking, localPacking, period, selectedDate]);
 
   return { pickingData, packingData, loading };
 }
@@ -169,7 +174,8 @@ export function usePeriodData(
 export function aggregateToChartData(
   pickingData: PickingRecord[],
   packingData: PackingRecord[],
-  period: Period
+  period: Period,
+  selectedDate?: string
 ) {
   if (period === "day") {
     // Hourly slots - same as before

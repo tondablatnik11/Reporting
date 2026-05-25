@@ -9,8 +9,9 @@ import PeriodSelector from "@/components/ui/PeriodSelector";
 
 export default function ShiftComparisonPage() {
   const [period, setPeriod] = useState<Period>("day");
+  const [selectedDate, setSelectedDate] = useState<string>("");
   const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking);
+  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, selectedDate);
 
   const currentWeek = getISOWeekNumber(new Date());
   const isEvenWeek = currentWeek % 2 === 0;
@@ -85,7 +86,13 @@ export default function ShiftComparisonPage() {
             Týden {currentWeek} · Směna A = {isEvenWeek ? 'Ranní' : 'Odpolední'}, Směna B = {isEvenWeek ? 'Odpolední' : 'Ranní'}
           </p>
         </div>
-        <PeriodSelector value={period} onChange={setPeriod} loading={loading} />
+        <PeriodSelector 
+            value={period} 
+            onChange={setPeriod} 
+            loading={loading}
+            selectedDate={selectedDate}
+            onDateChange={setSelectedDate}
+        />
       </div>
 
       {/* Shift A vs B Cards */}

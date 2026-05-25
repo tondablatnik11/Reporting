@@ -1,18 +1,22 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { PackageSearch, Box, TrendingUp, Users, BarChart3 } from "lucide-react";
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { useData } from "@/lib/data-context";
-import { usePeriodData, aggregateToChartData } from "@/lib/use-period-data";
+import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-period-data";
+import PeriodSelector from "@/components/ui/PeriodSelector";
 import EmployeePerformance from "@/components/analytics/EmployeePerformance";
 
 export default function DashboardPage() {
+  const [period, setPeriod] = useState<Period>("day");
+  const [selectedDate, setSelectedDate] = useState<string>("");
+
   const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData } = usePeriodData("day", localPicking, localPacking);
+  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, selectedDate);
 
   // We need to calculate chartData and totals based on the filtered data
-  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, "day"), [pickingData, packingData]);
+  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, selectedDate), [pickingData, packingData, period, selectedDate]);
   
   let totalPicking = 0;
   let totalPacking = 0;
@@ -79,8 +83,17 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-white tracking-wide">Celkový Přehled Výkonu</h1>
           <p className="text-white/40 text-sm mt-1">Denní souhrn všech operací na skladu</p>
         </div>
-        <div className="text-sm font-medium text-white/50 bg-white/5 px-4 py-2 rounded-full border border-white/10">
-          Směna: Ranní & Odpolední (05:45 - 21:45)
+        <div className="flex items-center gap-4">
+          <PeriodSelector 
+            value={period} 
+            onChange={setPeriod} 
+            loading={loading}
+            selectedDate={selectedDate}
+            onDateChange={setSelectedDate}
+          />
+          <div className="text-sm font-medium text-white/50 bg-white/5 px-4 py-2 rounded-full border border-white/10 hidden md:block">
+            Směna: Ranní & Odpolední (05:45 - 21:45)
+          </div>
         </div>
       </div>
 

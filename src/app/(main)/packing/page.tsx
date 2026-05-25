@@ -19,12 +19,13 @@ const OPERATOR_COLORS = [
 
 export default function PackingPage() {
   const [period, setPeriod] = useState<Period>("day");
+  const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedOperators, setSelectedOperators] = useState<Set<string>>(new Set());
 
   const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking);
+  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, selectedDate);
 
-  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period), [pickingData, packingData, period]);
+  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, selectedDate), [pickingData, packingData, period, selectedDate]);
 
   const totalKs = packingData.reduce((s, r) => s + (r.quantity || 0), 0);
   const totalHUs = new Set(packingData.map(r => r.internal_hu)).size;
@@ -92,7 +93,13 @@ export default function PackingPage() {
           <h1 className="text-2xl font-bold text-white tracking-wide">Detailní Přehled – Packing</h1>
           <p className="text-white/40 text-sm mt-1">Sledování výkonnosti balení a kompletace</p>
         </div>
-        <PeriodSelector value={period} onChange={p => { setPeriod(p); setSelectedOperators(new Set()); }} loading={loading} />
+          <PeriodSelector 
+            value={period} 
+            onChange={p => { setPeriod(p); setSelectedOperators(new Set()); }} 
+            loading={loading} 
+            selectedDate={selectedDate}
+            onDateChange={setSelectedDate}
+          />
       </div>
 
       {/* KPI Cards */}

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Users2, Plus, Trash2, Save, PackageSearch, Box } from "lucide-react";
-import { useData } from "@/lib/data-context";
+import { useData, getShiftLabel } from "@/lib/data-context";
 
 interface Operator {
   id: string;
@@ -19,32 +19,49 @@ export default function OperatorsPage() {
 
   // Auto-detect operators from imported data
   const detectedOperators = useMemo(() => {
-    const pickerMap = new Map<string, { tos: number; ks: number }>();
-    const packerMap = new Map<string, { hus: number; ks: number }>();
+    const pickerMap = new Map<string, { tos: number; ks: number; shiftA: number; shiftB: number }>();
+    const packerMap = new Map<string, { hus: number; ks: number; shiftA: number; shiftB: number }>();
 
     pickingData.forEach(r => {
       if (!r.operator || r.quantity <= 0) return;
-      const e = pickerMap.get(r.operator) || { tos: 0, ks: 0 };
+      const e = pickerMap.get(r.operator) || { tos: 0, ks: 0, shiftA: 0, shiftB: 0 };
       e.tos += 1;
       e.ks += r.quantity;
+      if (r.confirmed_at) {
+        const shift = getShiftLabel(new Date(r.confirmed_at));
+        if (shift === "A") e.shiftA += 1; else e.shiftB += 1;
+      }
       pickerMap.set(r.operator, e);
     });
 
     packingData.forEach(r => {
       if (!r.operator || !r.hu_number) return;
-      const e = packerMap.get(r.operator) || { hus: 0, ks: 0 };
+      const e = packerMap.get(r.operator) || { hus: 0, ks: 0, shiftA: 0, shiftB: 0 };
       e.hus += 1;
       e.ks += r.quantity || 0;
+      if (r.created_at) {
+        const shift = getShiftLabel(new Date(r.created_at));
+        if (shift === "A") e.shiftA += 1; else e.shiftB += 1;
+      }
       packerMap.set(r.operator, e);
     });
 
     const allNames = new Set([...pickerMap.keys(), ...packerMap.keys()]);
-    return Array.from(allNames).map(name => ({
-      name,
-      picking: pickerMap.get(name) || { tos: 0, ks: 0 },
-      packing: packerMap.get(name) || { hus: 0, ks: 0 },
-      role: (pickerMap.has(name) && packerMap.has(name)) ? 'both' : pickerMap.has(name) ? 'picker' : 'packer' as 'picker' | 'packer' | 'both',
-    })).sort((a, b) => (b.picking.tos + b.packing.hus) - (a.picking.tos + a.packing.hus));
+    return Array.from(allNames).map(name => {
+      const p = pickerMap.get(name) || { tos: 0, ks: 0, shiftA: 0, shiftB: 0 };
+      const pack = packerMap.get(name) || { hus: 0, ks: 0, shiftA: 0, shiftB: 0 };
+      const totalA = p.shiftA + pack.shiftA;
+      const totalB = p.shiftB + pack.shiftB;
+      const dominantShift = totalA > totalB ? "A" : totalB > totalA ? "B" : "Neznámo";
+
+      return {
+        name,
+        picking: p,
+        packing: pack,
+        dominantShift,
+        role: (pickerMap.has(name) && packerMap.has(name)) ? 'both' : pickerMap.has(name) ? 'picker' : 'packer' as 'picker' | 'packer' | 'both',
+      };
+    }).sort((a, b) => (b.picking.tos + b.packing.hus) - (a.picking.tos + a.packing.hus));
   }, [pickingData, packingData]);
 
   const addOperator = () => {
@@ -106,6 +123,7 @@ export default function OperatorsPage() {
                 <tr className="border-b border-white/5 bg-white/[0.02]">
                   <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider">Jméno</th>
                   <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-center">Role</th>
+                  <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-center">Převládající směna</th>
                   <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-right">
                     <span className="flex items-center gap-1 justify-end"><PackageSearch className="w-3 h-3" /> TO</span>
                   </th>
@@ -132,6 +150,17 @@ export default function OperatorsPage() {
                       }`}>
                         {op.role === 'picker' ? 'Picker' : op.role === 'packer' ? 'Packer' : 'Obojí'}
                       </span>
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      {op.dominantShift !== "Neznámo" ? (
+                        <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                          op.dominantShift === 'A' ? 'bg-amber-500/15 text-amber-400' : 'bg-indigo-500/15 text-indigo-400'
+                        }`}>
+                          Směna {op.dominantShift}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-white/30">-</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-sm font-bold text-blue-400 text-right">{op.picking.tos}</td>
                     <td className="px-5 py-3 text-sm text-blue-400/70 text-right">{op.picking.ks.toLocaleString()}</td>
