@@ -93,7 +93,8 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
   }));
 }
 
-// Main hook - returns period-filtered data either from local state or Supabase
+// Main hook - ALWAYS fetches from Supabase, merges local (unsaved) data on top.
+// This ensures data shows on Vercel even after page refresh.
 export function usePeriodData(
   period: Period,
   localPicking: PickingRecord[],
@@ -101,17 +102,9 @@ export function usePeriodData(
 ) {
   const [dbPicking, setDbPicking] = useState<PickingRecord[]>([]);
   const [dbPacking, setDbPacking] = useState<PackingRecord[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (period === "day") {
-      // Use local data only for "day"
-      setDbPicking([]);
-      setDbPacking([]);
-      return;
-    }
-
-    // For other periods fetch from Supabase
     const { from, to } = getPeriodRange(period);
     setLoading(true);
 
@@ -122,11 +115,27 @@ export function usePeriodData(
       setDbPicking(picking);
       setDbPacking(packing);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((err) => {
+      console.error("DB fetch error:", err);
+      setLoading(false);
+    });
   }, [period]);
 
-  const pickingData = period === "day" ? localPicking : dbPicking;
-  const packingData = period === "day" ? localPacking : dbPacking;
+  // Merge: DB data + any local-only records not yet in DB
+  // (deduplicate by to_number for picking, internal_hu for packing)
+  const pickingData = useMemo(() => {
+    if (localPicking.length === 0) return dbPicking;
+    const dbKeys = new Set(dbPicking.map(r => r.to_number));
+    const localOnly = localPicking.filter(r => !dbKeys.has(r.to_number));
+    return [...dbPicking, ...localOnly];
+  }, [dbPicking, localPicking]);
+
+  const packingData = useMemo(() => {
+    if (localPacking.length === 0) return dbPacking;
+    const dbKeys = new Set(dbPacking.map(r => r.internal_hu));
+    const localOnly = localPacking.filter(r => !dbKeys.has(r.internal_hu));
+    return [...dbPacking, ...localOnly];
+  }, [dbPacking, localPacking]);
 
   return { pickingData, packingData, loading };
 }
