@@ -3,12 +3,35 @@
 import { useMemo } from "react";
 import { PackageSearch, Box, TrendingUp, Users, BarChart3 } from "lucide-react";
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { useAggregatedData, useData } from "@/lib/data-context";
+import { useData } from "@/lib/data-context";
+import { usePeriodData, aggregateToChartData } from "@/lib/use-period-data";
 import EmployeePerformance from "@/components/analytics/EmployeePerformance";
 
 export default function DashboardPage() {
-  const { chartData, totalPicking, totalPacking, totalPickingTOs, totalPackingHUs } = useAggregatedData();
-  const { pickingData, packingData } = useData();
+  const { pickingData: localPicking, packingData: localPacking } = useData();
+  const { pickingData, packingData } = usePeriodData("day", localPicking, localPacking);
+
+  // We need to calculate chartData and totals based on the filtered data
+  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, "day"), [pickingData, packingData]);
+  
+  let totalPicking = 0;
+  let totalPacking = 0;
+  const globalPickingTOs = new Set();
+  const globalPackingHUs = new Set();
+
+  pickingData.forEach(p => {
+    totalPicking += p.quantity;
+    globalPickingTOs.add(p.to_number);
+  });
+  packingData.forEach(p => {
+    if (p.created_at) {
+      totalPacking += (p.quantity || 0);
+      if (p.hu_number) globalPackingHUs.add(p.internal_hu);
+    }
+  });
+
+  const totalPickingTOs = globalPickingTOs.size;
+  const totalPackingHUs = globalPackingHUs.size;
 
   // Calculate real operator counts
   const { uniquePickerCount, uniquePackerCount, topPickers, topPackers } = useMemo(() => {
