@@ -122,20 +122,36 @@ export function usePeriodData(
   }, [period]);
 
   // Merge: DB data + any local-only records not yet in DB
-  // (deduplicate by to_number for picking, internal_hu for packing)
+  // (deduplicate by to_number for picking, internal_hu for packing AND filter by period)
   const pickingData = useMemo(() => {
-    if (localPicking.length === 0) return dbPicking;
+    const { from, to } = getPeriodRange(period);
+    const fromTime = new Date(from).getTime();
+    const toTime = new Date(to).getTime();
+
     const dbKeys = new Set(dbPicking.map(r => r.to_number));
-    const localOnly = localPicking.filter(r => !dbKeys.has(r.to_number));
+    const localOnly = localPicking.filter(r => {
+      if (dbKeys.has(r.to_number)) return false;
+      if (!r.confirmed_at) return false;
+      const time = new Date(r.confirmed_at).getTime();
+      return time >= fromTime && time <= toTime;
+    });
     return [...dbPicking, ...localOnly];
-  }, [dbPicking, localPicking]);
+  }, [dbPicking, localPicking, period]);
 
   const packingData = useMemo(() => {
-    if (localPacking.length === 0) return dbPacking;
+    const { from, to } = getPeriodRange(period);
+    const fromTime = new Date(from).getTime();
+    const toTime = new Date(to).getTime();
+
     const dbKeys = new Set(dbPacking.map(r => r.internal_hu));
-    const localOnly = localPacking.filter(r => !dbKeys.has(r.internal_hu));
+    const localOnly = localPacking.filter(r => {
+      if (dbKeys.has(r.internal_hu)) return false;
+      if (!r.created_at) return false;
+      const time = new Date(r.created_at).getTime();
+      return time >= fromTime && time <= toTime;
+    });
     return [...dbPacking, ...localOnly];
-  }, [dbPacking, localPacking]);
+  }, [dbPacking, localPacking, period]);
 
   return { pickingData, packingData, loading };
 }
