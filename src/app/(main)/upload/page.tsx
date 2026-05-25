@@ -4,9 +4,8 @@ import { useState } from "react";
 import { UploadCloud, FileSpreadsheet, Loader2, CheckCircle, AlertCircle, Trash2, Database } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useData } from "@/lib/data-context";
-import { supabase } from "@/../../lib/supabase";
+import { supabase } from "@/lib/supabase";
 import EmployeePerformance from "@/components/analytics/EmployeePerformance";
-import crypto from "crypto";
 
 // Simple hash for file dedup
 async function hashFile(file: File): Promise<string> {
