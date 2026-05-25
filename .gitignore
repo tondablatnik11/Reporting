@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Data directory for historical performance data
 /data/
+*.xlsx
+*.XLSX
+~/
