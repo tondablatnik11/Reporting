@@ -104,7 +104,7 @@ export default function UploadPage() {
       return {
         batch_id: batchId,
         tanum: String(row['Transfer Order Number'] || ''),
-        tapos: String(row['Transfer Order Item'] || row['TO Item'] || '1'),
+        tapos: String(row['Transfer order item'] || row['Transfer Order Item'] || row['TO Item'] || '1'),
         material: String(row['Material'] || ''),
         picker_sap_id: String(row['User_1'] || row['User'] || ''),
         dest_target_qty: Number(row['Dest.target quantity']) || 0,
@@ -228,7 +228,7 @@ export default function UploadPage() {
             importType = "PICKING";
             parsedData = json.map(row => ({
               to_number: String(row['Transfer Order Number']),
-              to_item: String(row['Transfer Order Item'] || row['TO Item'] || '1'),
+              to_item: String(row['Transfer order item'] || row['Transfer Order Item'] || row['TO Item'] || '1'),
               operator: String(row['User_1'] || row['User']),
               quantity: Number(row['Dest.target quantity']) || 0,
               // AJ = Confirmation date_1 (MM/DD/YYYY), AK = Confirmation time_1
