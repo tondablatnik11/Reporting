@@ -1,15 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { UploadCloud, FileSpreadsheet, Loader2, CheckCircle, AlertCircle, Trash2 } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, Loader2, CheckCircle, AlertCircle, Trash2, Database } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useData } from "@/lib/data-context";
+import { supabase } from "@/../../lib/supabase";
 import EmployeePerformance from "@/components/analytics/EmployeePerformance";
+import crypto from "crypto";
+
+// Simple hash for file dedup
+async function hashFile(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export default function UploadPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [results, setResults] = useState<any[]>([]);
+  const [saveToDb, setSaveToDb] = useState(true);
 
   const { addPickingData, addPackingData, clearData } = useData();
 
@@ -63,8 +74,104 @@ export default function UploadPage() {
     return new Date(year, month, day, hours, minutes, seconds);
   };
 
+  // Save LTAP data to Supabase
+  const saveLtapToSupabase = async (json: any[], batchId: string) => {
+    const rows = json.map(row => {
+      const confirmedAt = parseExcelDateTime(
+        row['Confirmation date_1'] || row['Confirmation date'],
+        row['Confirmation time_1'] || row['Confirmation time']
+      );
+      return {
+        batch_id: batchId,
+        tanum: String(row['Transfer Order Number'] || ''),
+        tapos: String(row['Transfer Order Item'] || row['TO Item'] || '1'),
+        material: String(row['Material'] || ''),
+        picker_sap_id: String(row['User_1'] || row['User'] || ''),
+        dest_target_qty: Number(row['Dest.target quantity']) || 0,
+        weight: Number(row['Weight']) || null,
+        weight_unit: row['Weight Unit'] ? String(row['Weight Unit']) : null,
+        confirmed_at: confirmedAt.toISOString(),
+        warehouse_number: row['Warehouse Number'] ? String(row['Warehouse Number']) : null,
+        source_storage_type: row['Source Storage Type'] ? String(row['Source Storage Type']) : null,
+        dest_storage_type: row['Dest.Storage Type'] ? String(row['Dest.Storage Type']) : null,
+      };
+    }).filter(r => r.tanum && r.tanum !== 'undefined');
+
+    // Insert in batches of 500
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const { error } = await supabase.from('ltap_picking').upsert(batch, { onConflict: 'tanum,tapos', ignoreDuplicates: true });
+      if (error) console.error('LTAP insert error:', error.message);
+    }
+    return rows.length;
+  };
+
+  // Save VEKP data to Supabase
+  const saveVekpToSupabase = async (json: any[], batchId: string) => {
+    const rows = json.map(row => {
+      const createdAt = parseExcelDateTime(row['Created On'], row['Time']);
+      createdAt.setHours(createdAt.getHours() + 2); // VEKP +2h
+      return {
+        batch_id: batchId,
+        internal_hu_number: String(row['Internal HU number'] || ''),
+        handling_unit: row['Handling Unit'] ? String(row['Handling Unit']) : null,
+        created_by: row['Created By'] ? String(row['Created By']) : null,
+        packer_sap_id: String(row['Changed By'] || row['Created By'] || ''),
+        created_at: createdAt.toISOString(),
+        packed_at: createdAt.toISOString(),
+        total_weight: Number(row['Allowed Weight']) || Number(row['Total Weight']) || null,
+        weight_unit: row['Unit of Weight'] ? String(row['Unit of Weight']) : null,
+        delivery: row['Delivery'] ? String(row['Delivery']) : null,
+        packaging_material: row['Packaging Material'] ? String(row['Packaging Material']) : null,
+      };
+    }).filter(r => r.internal_hu_number && r.internal_hu_number !== 'undefined');
+
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const { error } = await supabase.from('vekp_packing_headers').upsert(batch, { onConflict: 'internal_hu_number', ignoreDuplicates: true });
+      if (error) console.error('VEKP insert error:', error.message);
+    }
+    return rows.length;
+  };
+
+  // Save VEPO data to Supabase
+  const saveVepoToSupabase = async (json: any[], batchId: string) => {
+    const rows = json.map(row => ({
+      batch_id: batchId,
+      internal_hu_number: String(row['Internal HU number'] || ''),
+      material: row['Material'] ? String(row['Material']) : null,
+      packed_quantity: Number(row['Packed quantity']) || 0,
+      delivery: row['Delivery'] ? String(row['Delivery']) : null,
+      unit_of_measure: row['Unit of Measure'] ? String(row['Unit of Measure']) : null,
+      batch: row['Batch'] ? String(row['Batch']) : null,
+    })).filter(r => r.internal_hu_number && r.internal_hu_number !== 'undefined');
+
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const { error } = await supabase.from('vepo_packing_items').insert(batch);
+      if (error) console.error('VEPO insert error:', error.message);
+    }
+    return rows.length;
+  };
+
+  // Create import batch record
+  const createBatch = async (file: File, sourceType: string, fileHash: string) => {
+    const { data, error } = await supabase.from('import_batches').insert([{
+      source_type: sourceType,
+      file_name: file.name,
+      file_hash: fileHash,
+      status: 'processing',
+      report_date: new Date().toISOString().split('T')[0],
+    }]).select().single();
+    if (error) {
+      if (error.code === '23505') return null; // Duplicate file
+      throw error;
+    }
+    return data;
+  };
+
   const processFile = async (file: File) => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve) => {
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
@@ -75,8 +182,27 @@ export default function UploadPage() {
 
           let importType = "UNKNOWN";
           let parsedData: any[] = [];
+          let dbRows = 0;
 
           const filename = file.name.toUpperCase();
+
+          // Create batch in Supabase
+          let batchId: string | null = null;
+          if (saveToDb) {
+            try {
+              const fileHash = await hashFile(file);
+              const sourceType = filename.includes("LTAP") ? "LTAP" : filename.includes("VEKP") ? "VEKP" : "VEPO";
+              const batch = await createBatch(file, sourceType, fileHash);
+              if (batch) {
+                batchId = batch.id;
+              } else {
+                return resolve({ name: file.name, status: "warning", message: "Tento soubor byl již dříve importován (duplicitní hash)." });
+              }
+            } catch (err: any) {
+              console.error("Batch creation error:", err);
+            }
+          }
+
           if (filename.includes("LTAP")) {
             importType = "PICKING";
             parsedData = json.map(row => ({
@@ -88,22 +214,29 @@ export default function UploadPage() {
 
             addPickingData(parsedData);
 
+            if (saveToDb && batchId) {
+              dbRows = await saveLtapToSupabase(json, batchId);
+            }
+
           } else if (filename.includes("VEKP")) {
             importType = "PACKING_HEADERS";
             parsedData = json.map(row => {
               const dt = parseExcelDateTime(row['Created On'], row['Time']);
-              // Přičtení 2 hodin pro VEKP
-              dt.setHours(dt.getHours() + 2);
+              dt.setHours(dt.getHours() + 2); // VEKP +2h
               return {
                 internal_hu: String(row['Internal HU number']),
                 hu_number: String(row['Handling Unit']),
-                operator: String(row['Created By']),
+                operator: String(row['Changed By'] || ''),  // FIXED: Changed By (column T)
                 quantity: 0,
                 created_at: dt,
               };
             }).filter(r => r.internal_hu && r.internal_hu !== "undefined");
 
             addPackingData(parsedData);
+
+            if (saveToDb && batchId) {
+              dbRows = await saveVekpToSupabase(json, batchId);
+            }
 
           } else if (filename.includes("VEPO")) {
             importType = "PACKING_ITEMS";
@@ -114,11 +247,25 @@ export default function UploadPage() {
             })).filter(r => r.internal_hu && r.internal_hu !== "undefined");
 
             addPackingData(parsedData);
+
+            if (saveToDb && batchId) {
+              dbRows = await saveVepoToSupabase(json, batchId);
+            }
           } else {
             return resolve({ name: file.name, status: "error", message: "Neznámý typ reportu. Název musí obsahovat LTAP, VEKP nebo VEPO." });
           }
 
-          resolve({ name: file.name, status: "success", message: `Zpracováno ${parsedData.length} řádků (${importType})` });
+          // Update batch status
+          if (saveToDb && batchId) {
+            await supabase.from('import_batches').update({
+              status: 'completed',
+              total_rows: json.length,
+              accepted_rows: dbRows,
+            }).eq('id', batchId);
+          }
+
+          const dbMsg = saveToDb && batchId ? ` · ${dbRows} uloženo do DB` : '';
+          resolve({ name: file.name, status: "success", message: `Zpracováno ${parsedData.length} řádků (${importType})${dbMsg}` });
         } catch (err: any) {
           resolve({ name: file.name, status: "error", message: err.message || "Chyba při parsování" });
         }
@@ -147,12 +294,24 @@ export default function UploadPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white tracking-wide">Import Dat ze SAPu</h1>
-        <button
-          onClick={clearData}
-          className="flex items-center gap-2 text-red-400 bg-red-400/10 hover:bg-red-400/20 px-4 py-2 rounded-lg transition-colors text-sm font-bold"
-        >
-          <Trash2 className="w-4 h-4" /> Vymazat lokální data
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSaveToDb(!saveToDb)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm font-bold ${
+              saveToDb
+                ? 'text-emerald-400 bg-emerald-400/10 hover:bg-emerald-400/20 border border-emerald-400/20'
+                : 'text-white/40 bg-white/5 hover:bg-white/10 border border-white/10'
+            }`}
+          >
+            <Database className="w-4 h-4" /> {saveToDb ? 'Ukládání do DB: ON' : 'Ukládání do DB: OFF'}
+          </button>
+          <button
+            onClick={clearData}
+            className="flex items-center gap-2 text-red-400 bg-red-400/10 hover:bg-red-400/20 px-4 py-2 rounded-lg transition-colors text-sm font-bold"
+          >
+            <Trash2 className="w-4 h-4" /> Vymazat lokální data
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -182,6 +341,11 @@ export default function UploadPage() {
             <p className="text-sm text-white/40 text-center max-w-sm">
               Podporované soubory: LTAP (Picking), VEKP (Packing hlavičky), VEPO (Packing položky) ve formátu .xlsx nebo .csv
             </p>
+            {saveToDb && (
+              <p className="text-xs text-emerald-400/60 mt-3 flex items-center gap-1">
+                <Database className="w-3 h-3" /> Data se automaticky uloží do Supabase
+              </p>
+            )}
           </div>
 
           {files.length > 0 && (
@@ -236,6 +400,8 @@ export default function UploadPage() {
                   <div key={i} className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-start gap-4">
                     {res.status === "success" ? (
                       <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                    ) : res.status === "warning" ? (
+                      <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                     ) : (
                       <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
                     )}
