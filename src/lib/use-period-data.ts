@@ -180,11 +180,12 @@ export function usePeriodData(
 
     Promise.all(fetches).then((results) => {
       if (!active) return;
-      setDbPicking(results[0] || []);
-      setDbPacking(results[1] || []);
+      // Přetypování na explicitní typy polí kvůli TypeScriptu, jelikož Promise.all vrací unii typů
+      setDbPicking((results[0] as PickingRecord[]) || []);
+      setDbPacking((results[1] as PackingRecord[]) || []);
       if (results.length > 2) {
-        setCompPicking(results[2] || []);
-        setCompPacking(results[3] || []);
+        setCompPicking((results[2] as PickingRecord[]) || []);
+        setCompPacking((results[3] as PackingRecord[]) || []);
       } else {
         setCompPicking([]);
         setCompPacking([]);
