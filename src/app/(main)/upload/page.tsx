@@ -231,6 +231,7 @@ export default function UploadPage() {
               to_item: String(row['Transfer order item'] || row['Transfer Order Item'] || row['TO Item'] || '1'),
               operator: String(row['User_1'] || row['User']),
               quantity: Number(row['Dest.target quantity']) || 0,
+              weight: Number(row['Weight']) || 0,
               // AJ = Confirmation date_1 (MM/DD/YYYY), AK = Confirmation time_1
               confirmed_at: parseExcelDateTime(
                 row['Confirmation date_1'] || row['Confirmation date'],
@@ -255,6 +256,7 @@ export default function UploadPage() {
                 hu_number: String(row['Handling Unit']),
                 operator: String(row['Created By'] || ''), // sloupec Q
                 quantity: 0,
+                weight: Number(row['Allowed Weight']) || Number(row['Total Weight']) || 0,
                 created_at: dt,
               };
             }).filter(r => r.internal_hu && r.internal_hu !== "undefined");
@@ -441,7 +443,7 @@ export default function UploadPage() {
               </div>
             )}
           </div>
-          <EmployeePerformance timeRange="daily" />
+          <EmployeePerformance />
         </div>
       </div>
     </div>
