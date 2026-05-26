@@ -335,3 +335,34 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
 }
+
+// Chybějící funkce, kterou využívá stránka "shift-comparison" (nyní včetně váhy u pickingu)
+export function aggregateShiftStats(pickingData: PickingRecord[], packingData: PackingRecord[]) {
+  const a = { pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>() };
+  const b = { pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>() };
+
+  pickingData.forEach(p => {
+    if (!p.confirmed_at) return;
+    const shift = getShiftLabel(new Date(p.confirmed_at));
+    const t = shift === "A" ? a : b;
+    t.pickingKs += p.quantity;
+    t.weight += (p.weight || 0); // Vylepšení: počítáme váhu i u pickingu
+    t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
+    if (p.operator) t.operators.add(p.operator);
+  });
+  
+  packingData.forEach(p => {
+    if (!p.created_at) return;
+    const shift = getShiftLabel(new Date(p.created_at));
+    const t = shift === "A" ? a : b;
+    t.packingKs += (p.quantity || 0);
+    t.weight += (p.weight || 0);
+    t.packingHUs.add(p.internal_hu);
+    if (p.operator) t.operators.add(p.operator);
+  });
+
+  return {
+    a: { pickingKs: a.pickingKs, packingKs: a.packingKs, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, weight: a.weight, operators: a.operators.size },
+    b: { pickingKs: b.pickingKs, packingKs: b.packingKs, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, weight: b.weight, operators: b.operators.size },
+  };
+}
