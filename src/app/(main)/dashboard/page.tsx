@@ -73,6 +73,7 @@ export default function DashboardPage() {
 
   const pickTrend = calculateTrend(totalPickingTOs, prevTotalPickingTOs);
   const packTrend = calculateTrend(totalPackingHUs, prevTotalPackingHUs);
+  const avgKsPerTO = totalPickingTOs > 0 ? Math.round(totalPicking / totalPickingTOs) : 0;
   const avgTrend = calculateTrend(avgKsPerTO, prevTotalPickingTOs > 0 ? Math.round(prevTotalPicking / prevTotalPickingTOs) : 0);
 
   const [isExporting, setIsExporting] = useState(false);
@@ -153,8 +154,6 @@ export default function DashboardPage() {
     ...pickingData.filter(r => r.operator).map(r => r.operator),
     ...packingData.filter(r => r.operator).map(r => r.operator!)
   ]).size;
-
-  const avgKsPerTO = totalPickingTOs > 0 ? Math.round(totalPicking / totalPickingTOs) : 0;
 
   return (
     <div className="space-y-6 animate-fade-in-up">
