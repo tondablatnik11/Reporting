@@ -18,20 +18,38 @@ const OPERATOR_COLORS = [
 ];
 
 export default function PackingPage() {
+  const todayStr = new Date().toISOString().split('T')[0];
   const [period, setPeriod] = useState<Period>("day");
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [dateValue, setDateValue] = useState<string>(todayStr);
+  const [isComparing, setIsComparing] = useState<boolean>(false);
+  const [compareDateValue, setCompareDateValue] = useState<string>("");
   const [selectedOperators, setSelectedOperators] = useState<Set<string>>(new Set());
 
   const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, selectedDate);
+  const { pickingData, packingData, compPacking, loading } = usePeriodData(
+    period, localPicking, localPacking, dateValue, isComparing, compareDateValue
+  );
 
-  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, selectedDate), [pickingData, packingData, period, selectedDate]);
+  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
 
   const totalKs = packingData.reduce((s, r) => s + (r.quantity || 0), 0);
   const totalHUs = new Set(packingData.map(r => r.internal_hu)).size;
   const uniqueOperators = new Set(packingData.filter(r => r.operator && r.hu_number).map(r => r.operator!)).size;
 
-  // Operator grouped chart data (HU per operator per time slot)
+  const compTotalKs = compPacking.reduce((s, r) => s + (r.quantity || 0), 0);
+  const compTotalHUs = new Set(compPacking.map(r => r.internal_hu)).size;
+
+  const getDiffLabel = (current: number, compare: number) => {
+    if (!isComparing || compare === 0) return null;
+    const diff = ((current - compare) / compare) * 100;
+    const isPos = diff >= 0;
+    return (
+      <span className={`text-xs ml-2 font-bold px-1.5 py-0.5 rounded-full ${isPos ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+        {isPos ? '+' : ''}{diff.toFixed(1)}%
+      </span>
+    );
+  };
+
   const { operatorChartData, operators } = useMemo(() => {
     const timeKeys = [...new Set(chartData.map(d => d.time))];
     const map = new Map<string, any>();
@@ -40,13 +58,13 @@ export default function PackingPage() {
     const opHUs = new Map<string, Map<string, Set<string>>>();
     packingData.forEach(p => {
       if (!p.created_at || !p.operator) return;
-      let timeKey: string;
+      let timeKey: string = "";
       if (period === "day") {
-        const slot = getSlot(p.created_at);
-        const slotObj = hourlySlots.find(s => `${s.start} - ${s.end}` === slot);
+        const slotObj = hourlySlots.find(s => `${s.start} - ${s.end}` === getSlot(p.created_at));
         timeKey = slotObj ? slotObj.start : "";
       } else if (period === "week") {
-        timeKey = ['Ne','Po','Út','St','Čt','Pá','So'][new Date(p.created_at).getDay()];
+        let d = new Date(p.created_at).getDay(); d = d === 0 ? 7 : d;
+        timeKey = ['Po','Út','St','Čt','Pá','So','Ne'][d - 1];
       } else if (period === "month") {
         timeKey = String(new Date(p.created_at).getDate());
       } else {
@@ -88,32 +106,42 @@ export default function PackingPage() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-wide">Detailní Přehled – Packing</h1>
           <p className="text-white/40 text-sm mt-1">Sledování výkonnosti balení a kompletace</p>
         </div>
-          <PeriodSelector 
-            value={period} 
-            onChange={p => { setPeriod(p); setSelectedOperators(new Set()); }} 
-            loading={loading} 
-            selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
-          />
+        <PeriodSelector 
+          period={period} 
+          onChangePeriod={(p) => { setPeriod(p); setSelectedOperators(new Set()); }} 
+          dateValue={dateValue}
+          onChangeDate={setDateValue}
+          isComparing={isComparing}
+          onToggleCompare={setIsComparing}
+          compareDateValue={compareDateValue}
+          onChangeCompareDate={setCompareDateValue}
+          loading={loading}
+        />
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="glass-panel p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-10"><Box className="w-20 h-20 text-purple-400" /></div>
           <div className="relative z-10">
-            <div className="text-3xl font-black text-white">{totalHUs.toLocaleString()}</div>
-            <div className="text-sm font-bold text-purple-400 mt-1">{totalKs.toLocaleString()} Ks</div>
+            <div className="text-3xl font-black text-white flex items-center">
+              {totalHUs.toLocaleString()} {getDiffLabel(totalHUs, compTotalHUs)}
+            </div>
+            <div className="text-sm font-bold text-purple-400 mt-1">
+              {totalKs.toLocaleString()} Ks {getDiffLabel(totalKs, compTotalKs)}
+            </div>
             <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Zabalené HU</div>
           </div>
         </div>
         <div className="glass-panel p-6">
-          <div className="text-3xl font-black text-white">{totalHUs > 0 ? Math.round(totalKs / totalHUs) : 0}</div>
+          <div className="text-3xl font-black text-white flex items-center">
+            {totalHUs > 0 ? Math.round(totalKs / totalHUs) : 0}
+            {getDiffLabel(totalHUs > 0 ? (totalKs / totalHUs) : 0, compTotalHUs > 0 ? (compTotalKs / compTotalHUs) : 0)}
+          </div>
           <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Průměr Ks / HU</div>
         </div>
         <div className="glass-panel p-6 relative overflow-hidden">
@@ -125,7 +153,6 @@ export default function PackingPage() {
         </div>
       </div>
 
-      {/* Graf 1: HU + Ks */}
       <div className="glass-panel p-6">
         <h3 className="text-lg font-bold text-white mb-5">Packing – HU a Kusy v čase</h3>
         <div className="h-[300px] w-full">
@@ -136,8 +163,8 @@ export default function PackingPage() {
               <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                 <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} label={{ value: "Ks", angle: -90, position: "insideLeft", style: { fill: "rgba(255,255,255,0.3)", fontSize: 10 } }} />
-                <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} label={{ value: "HU", angle: 90, position: "insideRight", style: { fill: "rgba(255,255,255,0.3)", fontSize: 10 } }} />
+                <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: 'rgba(10,14,30,0.95)', borderColor: 'rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '13px' }} itemStyle={{ color: '#fff' }} />
                 <Legend wrapperStyle={{ paddingTop: '12px', fontSize: '12px' }} />
                 <Bar yAxisId="left" dataKey="packing" name="Kusy (Ks)" fill="#b18cff" fillOpacity={0.7} radius={[4,4,0,0]} />
@@ -148,12 +175,11 @@ export default function PackingPage() {
         </div>
       </div>
 
-      {/* Graf 2: Skupinový – HU per operátor */}
       <div className="glass-panel p-6">
         <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <Users className="w-5 h-5 text-purple-400" />
-            <h3 className="text-lg font-bold text-white">Produktivita Operátorů – HU za hodinu</h3>
+            <h3 className="text-lg font-bold text-white">Produktivita Operátorů – HU</h3>
           </div>
           {operators.length > 0 && (
             <button onClick={() => setSelectedOperators(new Set())} className="text-xs text-white/40 hover:text-white transition-colors flex items-center gap-1">
@@ -194,9 +220,13 @@ export default function PackingPage() {
         </div>
       </div>
 
-      <EmployeePerformance timeRange="daily" filterType="packing" />
+      <EmployeePerformance 
+        filterType="packing" 
+        pickingData={pickingData} 
+        packingData={packingData} 
+        loading={loading} 
+      />
 
-      {/* Recent Activity */}
       <div className="glass-panel overflow-hidden">
         <div className="p-5 border-b border-white/5 bg-white/[0.02]">
           <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Poslední Packing aktivity</h3>
@@ -209,18 +239,20 @@ export default function PackingPage() {
                 <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider">Operátor</th>
                 <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider">Materiál</th>
                 <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-right">Ks</th>
+                <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-right">Váha</th>
                 <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-right">Čas</th>
               </tr>
             </thead>
             <tbody>
               {recentPacking.length === 0 ? (
-                <tr><td colSpan={5} className="px-5 py-8 text-center text-white/30">Žádná data pro zvolené období.</td></tr>
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-white/30">Žádná data pro zvolené období.</td></tr>
               ) : recentPacking.map((row, i) => (
                 <tr key={i} className={`hover:bg-white/[0.03] transition-colors ${i % 2 === 1 ? 'bg-white/[0.015]' : ''}`}>
                   <td className="px-5 py-3 text-sm font-medium text-white/80">{row.hu_number || row.internal_hu}</td>
                   <td className="px-5 py-3 text-sm text-white/60">{row.operator}</td>
                   <td className="px-5 py-3 text-sm text-white/40">{row.material}</td>
                   <td className="px-5 py-3 text-sm font-bold text-purple-400 text-right">{row.quantity}</td>
+                  <td className="px-5 py-3 text-sm text-white/50 text-right">{row.weight || '-'}</td>
                   <td className="px-5 py-3 text-sm text-white/40 text-right">{row.created_at ? new Date(row.created_at).toLocaleString('cs-CZ') : '-'}</td>
                 </tr>
               ))}
