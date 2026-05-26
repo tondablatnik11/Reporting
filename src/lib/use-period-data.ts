@@ -1,3 +1,4 @@
+// src/lib/use-period-data.ts
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -45,22 +46,41 @@ export function getPeriodLabel(period: Period): string {
   return "Celé období";
 }
 
-// Loads picking + packing from Supabase for given period
+// Loads picking + packing from Supabase for given period using pagination to overcome the 1000 rows limit
 async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
-  const { data, error } = await supabase
-    .from("ltap_picking")
-    .select("tanum, tapos, picker_sap_id, dest_target_qty, confirmed_at")
-    .gte("confirmed_at", from)
-    .lte("confirmed_at", to)
-    .not("picker_sap_id", "is", null)
-    .order("confirmed_at", { ascending: true });
+  let allData: any[] = [];
+  let hasMore = true;
+  let page = 0;
+  const pageSize = 1000;
 
-  if (error) {
-    console.error("Picking fetch error:", error.message);
-    return [];
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from("ltap_picking")
+      .select("tanum, tapos, picker_sap_id, dest_target_qty, confirmed_at")
+      .gte("confirmed_at", from)
+      .lte("confirmed_at", to)
+      .not("picker_sap_id", "is", null)
+      .order("confirmed_at", { ascending: true })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+
+    if (error) {
+      console.error("Picking fetch error:", error.message);
+      break;
+    }
+
+    if (data && data.length > 0) {
+      allData = [...allData, ...data];
+      page++;
+      // Pokud se stáhlo méně než 1000 záznamů, jsme na poslední stránce
+      if (data.length < pageSize) {
+        hasMore = false;
+      }
+    } else {
+      hasMore = false;
+    }
   }
 
-  return (data || []).map((r: any) => ({
+  return allData.map((r: any) => ({
     to_number: r.tanum,
     to_item: r.tapos,
     operator: r.picker_sap_id || "",
@@ -70,20 +90,39 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
 }
 
 async function fetchPackingFromDb(from: string, to: string): Promise<PackingRecord[]> {
-  const { data, error } = await supabase
-    .from("vekp_packing_headers")
-    .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, vepo_packing_items(packed_quantity, material)")
-    .gte("packed_at", from)
-    .lte("packed_at", to)
-    .not("packer_sap_id", "is", null)
-    .order("packed_at", { ascending: true });
+  let allData: any[] = [];
+  let hasMore = true;
+  let page = 0;
+  const pageSize = 1000;
 
-  if (error) {
-    console.error("Packing fetch error:", error.message);
-    return [];
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from("vekp_packing_headers")
+      .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, vepo_packing_items(packed_quantity, material)")
+      .gte("packed_at", from)
+      .lte("packed_at", to)
+      .not("packer_sap_id", "is", null)
+      .order("packed_at", { ascending: true })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+
+    if (error) {
+      console.error("Packing fetch error:", error.message);
+      break;
+    }
+
+    if (data && data.length > 0) {
+      allData = [...allData, ...data];
+      page++;
+      // Pokud se stáhlo méně než 1000 záznamů, jsme na poslední stránce
+      if (data.length < pageSize) {
+        hasMore = false;
+      }
+    } else {
+      hasMore = false;
+    }
   }
 
-  return (data || []).map((r: any) => {
+  return allData.map((r: any) => {
     // Sum quantities from joined VEPO items
     const vepoItems = Array.isArray(r.vepo_packing_items) ? r.vepo_packing_items : [];
     const totalQuantity = vepoItems.reduce((sum: number, item: any) => sum + (Number(item.packed_quantity) || 0), 0);
