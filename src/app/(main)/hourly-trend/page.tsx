@@ -8,12 +8,13 @@ import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-peri
 import PeriodSelector from "@/components/ui/PeriodSelector";
 
 export default function HourlyTrendPage() {
+  const todayStr = new Date().toISOString().split('T')[0];
   const [period, setPeriod] = useState<Period>("day");
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [dateValue, setDateValue] = useState<string>(todayStr);
   const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, selectedDate);
+  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue);
 
-  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, selectedDate), [pickingData, packingData, period, selectedDate]);
+  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
 
   const totalPickingTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
   const totalPicking = pickingData.reduce((s, r) => s + r.quantity, 0);
@@ -52,14 +53,14 @@ export default function HourlyTrendPage() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between flex-wrap gap-4">
         <h1 className="text-2xl font-bold text-white tracking-wide">Vývoj v čase</h1>
           <PeriodSelector 
-            value={period} 
-            onChange={setPeriod} 
+            period={period} 
+            onChangePeriod={setPeriod} 
             loading={loading}
-            selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
+            dateValue={dateValue}
+            onChangeDate={setDateValue}
           />
       </div>
 
