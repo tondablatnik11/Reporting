@@ -7,6 +7,7 @@ export type PickingRecord = {
   to_item?: string;
   operator: string;
   quantity: number;
+  weight?: number;
   confirmed_at: Date;
 };
 
