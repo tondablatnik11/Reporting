@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PackageSearch, Box, Users, BarChart3 } from "lucide-react";
+import { PackageSearch, Box, Users, BarChart3, ArrowUpRight, ArrowDownRight, Download, Loader2 } from "lucide-react";
 import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { useData } from "@/lib/data-context";
 import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-period-data";
@@ -14,7 +14,7 @@ export default function DashboardPage() {
   const [dateValue, setDateValue] = useState<string>(todayStr);
 
   const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue);
+  const { pickingData, packingData, previousPickingData, previousPackingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue);
 
   const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
   
@@ -36,6 +36,87 @@ export default function DashboardPage() {
 
   const totalPickingTOs = globalPickingTOs.size;
   const totalPackingHUs = globalPackingHUs.size;
+
+  // Previous period calculations
+  let prevTotalPicking = 0;
+  let prevTotalPacking = 0;
+  const prevGlobalPickingTOs = new Set();
+  const prevGlobalPackingHUs = new Set();
+
+  previousPickingData.forEach(p => {
+    prevTotalPicking += p.quantity;
+    prevGlobalPickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
+  });
+  previousPackingData.forEach(p => {
+    if (p.created_at) {
+      prevTotalPacking += (p.quantity || 0);
+      if (p.hu_number) prevGlobalPackingHUs.add(p.internal_hu);
+    }
+  });
+
+  const prevTotalPickingTOs = prevGlobalPickingTOs.size;
+  const prevTotalPackingHUs = prevGlobalPackingHUs.size;
+
+  const calculateTrend = (current: number, previous: number) => {
+    if (previous === 0 && current === 0) return { percent: 0, isPositive: true, text: "Beze změny" };
+    if (previous === 0) return { percent: 100, isPositive: true, text: "+100%" };
+    const diff = current - previous;
+    const percent = Math.round((diff / previous) * 100);
+    return {
+      percent: Math.abs(percent),
+      isPositive: diff >= 0,
+      text: `${diff >= 0 ? '+' : '-'}${Math.abs(percent)}%`
+    };
+  };
+
+  const trendText = period === "day" ? "oproti včerejšku" : period === "week" ? "oproti minulému týdnu" : period === "month" ? "oproti minulému měsíci" : "";
+
+  const pickTrend = calculateTrend(totalPickingTOs, prevTotalPickingTOs);
+  const packTrend = calculateTrend(totalPackingHUs, prevTotalPackingHUs);
+  const avgTrend = calculateTrend(avgKsPerTO, prevTotalPickingTOs > 0 ? Math.round(prevTotalPicking / prevTotalPickingTOs) : 0);
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportPDF = async () => {
+    setIsExporting(true);
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+      
+      const element = document.getElementById('report-container');
+      if (!element) return;
+      
+      // Temporarily expand the element for full capture if needed
+      element.style.background = '#030507';
+      
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#030507',
+        windowWidth: 1200,
+      });
+      
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Hellmann_Report_${dateValue || todayStr}.pdf`);
+    } catch (error) {
+      console.error("PDF Export failed", error);
+      alert("Došlo k chybě při generování PDF.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const { uniquePickerCount, uniquePackerCount, topPickers, topPackers } = useMemo(() => {
     const pickerSet = new Set<string>();
@@ -83,6 +164,16 @@ export default function DashboardPage() {
           <p className="text-white/40 text-sm mt-1">Souhrn operací na skladu pro zvolené období</p>
         </div>
         <div className="flex items-center gap-4">
+          {period !== "all" && (
+            <button 
+              onClick={exportPDF} 
+              disabled={isExporting || loading}
+              className="glass-button-primary text-sm flex items-center gap-2"
+            >
+              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              {isExporting ? "Generuji PDF..." : "Exportovat PDF"}
+            </button>
+          )}
           <PeriodSelector 
             period={period} 
             onChangePeriod={setPeriod} 
@@ -93,15 +184,27 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <div id="report-container" className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="glass-panel p-6 relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <PackageSearch className="w-20 h-20 text-blue-400" />
           </div>
-          <div className="relative z-10">
-            <div className="text-3xl font-black text-white tracking-tight">{totalPickingTOs.toLocaleString()}</div>
-            <div className="text-sm font-bold text-blue-400 mt-1">{totalPicking.toLocaleString()} Ks</div>
-            <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Vypickované TO</div>
+          <div className="relative z-10 flex flex-col justify-between h-full">
+            <div>
+              <div className="text-3xl font-black text-white tracking-tight">{totalPickingTOs.toLocaleString()}</div>
+              <div className="text-sm font-bold text-blue-400 mt-1">{totalPicking.toLocaleString()} Ks</div>
+              <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Vypickované TO</div>
+            </div>
+            {period !== "all" && (
+              <div className="mt-4 flex items-center gap-1.5">
+                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${pickTrend.isPositive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                  {pickTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                  {pickTrend.text}
+                </div>
+                <span className="text-[10px] text-white/30 uppercase tracking-wider">{trendText}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -109,10 +212,21 @@ export default function DashboardPage() {
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Box className="w-20 h-20 text-purple-400" />
           </div>
-          <div className="relative z-10">
-            <div className="text-3xl font-black text-white tracking-tight">{totalPackingHUs.toLocaleString()}</div>
-            <div className="text-sm font-bold text-purple-400 mt-1">{totalPacking.toLocaleString()} Ks</div>
-            <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Zabalené HU</div>
+          <div className="relative z-10 flex flex-col justify-between h-full">
+            <div>
+              <div className="text-3xl font-black text-white tracking-tight">{totalPackingHUs.toLocaleString()}</div>
+              <div className="text-sm font-bold text-purple-400 mt-1">{totalPacking.toLocaleString()} Ks</div>
+              <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Zabalené HU</div>
+            </div>
+            {period !== "all" && (
+              <div className="mt-4 flex items-center gap-1.5">
+                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${packTrend.isPositive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                  {packTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                  {packTrend.text}
+                </div>
+                <span className="text-[10px] text-white/30 uppercase tracking-wider">{trendText}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -120,9 +234,20 @@ export default function DashboardPage() {
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <BarChart3 className="w-20 h-20 text-emerald-400" />
           </div>
-          <div className="relative z-10">
-            <div className="text-3xl font-black text-white tracking-tight">{avgKsPerTO}</div>
-            <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Průměr Ks / TO</div>
+          <div className="relative z-10 flex flex-col justify-between h-full">
+            <div>
+              <div className="text-3xl font-black text-white tracking-tight">{avgKsPerTO}</div>
+              <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Průměr Ks / TO</div>
+            </div>
+            {period !== "all" && (
+              <div className="mt-4 flex items-center gap-1.5">
+                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${avgTrend.isPositive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                  {avgTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                  {avgTrend.text}
+                </div>
+                <span className="text-[10px] text-white/30 uppercase tracking-wider">{trendText}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -205,6 +330,8 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      </div>
+
       </div>
 
       <EmployeePerformance 

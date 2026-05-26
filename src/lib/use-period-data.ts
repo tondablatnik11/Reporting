@@ -60,6 +60,46 @@ export function getPeriodRange(period: Period, dateValue?: string): { from: stri
   };
 }
 
+export function getPreviousPeriodRange(period: Period, dateValue?: string): { from: string; to: string } {
+  let from = new Date();
+  let to = new Date();
+
+  if (period === "day") {
+    if (dateValue) from = new Date(dateValue);
+    from.setDate(from.getDate() - 1);
+    from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "week") {
+    if (dateValue && dateValue.includes("-W")) {
+      const [y, w] = dateValue.split("-W");
+      from = getStartOfWeek(Number(y), Number(w) - 1);
+    } else {
+      const day = from.getDay() || 7;
+      from.setDate(from.getDate() - day + 1 - 7);
+    }
+    from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setDate(to.getDate() + 6);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "month") {
+    if (dateValue && dateValue.includes("-")) {
+      const [y, m] = dateValue.split("-");
+      from = new Date(Number(y), Number(m) - 2, 1, 0, 0, 0, 0);
+    } else {
+      from = new Date(from.getFullYear(), from.getMonth() - 1, 1, 0, 0, 0, 0);
+    }
+    to = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
+  } else {
+    from = new Date(2020, 0, 1);
+  }
+
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+  };
+}
+
 async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
   let allData: any[] = [];
   let hasMore = true;
@@ -152,44 +192,32 @@ export function usePeriodData(
   period: Period,
   localPicking: PickingRecord[],
   localPacking: PackingRecord[],
-  dateValue?: string,
-  isComparing?: boolean,
-  compareDateValue?: string
+  selectedDate?: string
 ) {
   const [dbPicking, setDbPicking] = useState<PickingRecord[]>([]);
   const [dbPacking, setDbPacking] = useState<PackingRecord[]>([]);
-  const [compPicking, setCompPicking] = useState<PickingRecord[]>([]);
-  const [compPacking, setCompPacking] = useState<PackingRecord[]>([]);
+  const [dbPrevPicking, setDbPrevPicking] = useState<PickingRecord[]>([]);
+  const [dbPrevPacking, setDbPrevPacking] = useState<PackingRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
-    const { from, to } = getPeriodRange(period, dateValue);
+    const { from, to } = getPeriodRange(period, selectedDate);
+    const { from: prevFrom, to: prevTo } = getPreviousPeriodRange(period, selectedDate);
+    
     setLoading(true);
 
-    const fetches = [
+    Promise.all([
       fetchPickingFromDb(from, to),
       fetchPackingFromDb(from, to),
-    ];
-
-    if (isComparing && compareDateValue && period !== 'all') {
-      const compRange = getPeriodRange(period, compareDateValue);
-      fetches.push(fetchPickingFromDb(compRange.from, compRange.to));
-      fetches.push(fetchPackingFromDb(compRange.from, compRange.to));
-    }
-
-    Promise.all(fetches).then((results) => {
+      period !== "all" ? fetchPickingFromDb(prevFrom, prevTo) : Promise.resolve([]),
+      period !== "all" ? fetchPackingFromDb(prevFrom, prevTo) : Promise.resolve([]),
+    ]).then(([picking, packing, prevPicking, prevPacking]) => {
       if (!active) return;
-      // Přetypování na explicitní typy polí kvůli TypeScriptu, jelikož Promise.all vrací unii typů
-      setDbPicking((results[0] as PickingRecord[]) || []);
-      setDbPacking((results[1] as PackingRecord[]) || []);
-      if (results.length > 2) {
-        setCompPicking((results[2] as PickingRecord[]) || []);
-        setCompPacking((results[3] as PackingRecord[]) || []);
-      } else {
-        setCompPicking([]);
-        setCompPacking([]);
-      }
+      setDbPicking(picking);
+      setDbPacking(packing);
+      setDbPrevPicking(prevPicking);
+      setDbPrevPacking(prevPacking);
       setLoading(false);
     }).catch((err) => {
       if (!active) return;
@@ -197,11 +225,10 @@ export function usePeriodData(
       setLoading(false);
     });
     return () => { active = false; };
-  }, [period, dateValue, isComparing, compareDateValue]);
+  }, [period, selectedDate]);
 
-  // Sloučení hlavních dat s lokálními nepouloženými
   const pickingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period, dateValue);
+    const { from, to } = getPeriodRange(period, selectedDate);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -214,10 +241,10 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPicking, ...localOnly];
-  }, [dbPicking, localPicking, period, dateValue]);
+  }, [dbPicking, localPicking, period, selectedDate]);
 
   const packingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period, dateValue);
+    const { from, to } = getPeriodRange(period, selectedDate);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -229,9 +256,41 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPacking, ...localOnly];
-  }, [dbPacking, localPacking, period, dateValue]);
+  }, [dbPacking, localPacking, period, selectedDate]);
 
-  return { pickingData, packingData, compPicking, compPacking, loading };
+  const previousPickingData = useMemo(() => {
+    if (period === "all") return [];
+    const { from, to } = getPreviousPeriodRange(period, selectedDate);
+    const fromTime = new Date(from).getTime();
+    const toTime = new Date(to).getTime();
+
+    const dbKeys = new Set(dbPrevPicking.map(r => `${r.to_number}-${r.to_item || '1'}`));
+    const localOnly = localPicking.filter(r => {
+      if (dbKeys.has(`${r.to_number}-${r.to_item || '1'}`)) return false;
+      if (!r.confirmed_at) return false;
+      const time = new Date(r.confirmed_at).getTime();
+      return time >= fromTime && time <= toTime;
+    });
+    return [...dbPrevPicking, ...localOnly];
+  }, [dbPrevPicking, localPicking, period, selectedDate]);
+
+  const previousPackingData = useMemo(() => {
+    if (period === "all") return [];
+    const { from, to } = getPreviousPeriodRange(period, selectedDate);
+    const fromTime = new Date(from).getTime();
+    const toTime = new Date(to).getTime();
+
+    const dbKeys = new Set(dbPrevPacking.map(r => r.internal_hu));
+    const localOnly = localPacking.filter(r => {
+      if (dbKeys.has(r.internal_hu)) return false;
+      if (!r.created_at) return false;
+      const time = new Date(r.created_at).getTime();
+      return time >= fromTime && time <= toTime;
+    });
+    return [...dbPrevPacking, ...localOnly];
+  }, [dbPrevPacking, localPacking, period, selectedDate]);
+
+  return { pickingData, packingData, previousPickingData, previousPackingData, loading };
 }
 
 export function aggregateToChartData(pickingData: PickingRecord[], packingData: PackingRecord[], period: Period, dateValue?: string) {
