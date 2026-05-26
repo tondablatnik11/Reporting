@@ -215,7 +215,13 @@ export default function DashboardPage() {
       </div>
 
       {/* Full Employee Table */}
-      <EmployeePerformance timeRange="daily" filterType="all" />
+      <EmployeePerformance 
+        timeRange="daily" 
+        filterType="all" 
+        pickingData={pickingData} 
+        packingData={packingData} 
+        loading={loading} 
+      />
     </div>
   );
 }
