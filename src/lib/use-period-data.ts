@@ -1,4 +1,3 @@
-// src/lib/use-period-data.ts
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -13,24 +12,46 @@ import {
 
 export type Period = "day" | "week" | "month" | "all";
 
-// Returns [from, to] ISO date strings based on period
-export function getPeriodRange(period: Period, selectedDate?: string): { from: string; to: string } {
-  const now = selectedDate ? new Date(selectedDate) : new Date();
-  const to = new Date(now);
-  to.setHours(23, 59, 59, 999);
+// Helper for parsing week format like "2026-W22"
+function getStartOfWeek(year: number, week: number) {
+  const d = new Date(year, 0, 4); // 4th of Jan is always in week 1
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - day + 1 + (week - 1) * 7);
+  return d;
+}
 
-  let from = new Date(now);
+// Returns [from, to] ISO date strings based on period and specific date string
+export function getPeriodRange(period: Period, dateValue?: string): { from: string; to: string } {
+  let from = new Date();
+  let to = new Date();
 
   if (period === "day") {
+    if (dateValue) from = new Date(dateValue);
     from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setHours(23, 59, 59, 999);
   } else if (period === "week") {
-    const day = now.getDay() || 7;
-    from.setDate(now.getDate() - day + 1);
+    if (dateValue && dateValue.includes("-W")) {
+      const [y, w] = dateValue.split("-W");
+      from = getStartOfWeek(Number(y), Number(w));
+    } else {
+      const day = from.getDay() || 7;
+      from.setDate(from.getDate() - day + 1);
+    }
     from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setDate(to.getDate() + 6);
+    to.setHours(23, 59, 59, 999);
   } else if (period === "month") {
-    from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    if (dateValue && dateValue.includes("-")) {
+      const [y, m] = dateValue.split("-");
+      from = new Date(Number(y), Number(m) - 1, 1, 0, 0, 0, 0);
+    } else {
+      from = new Date(from.getFullYear(), from.getMonth(), 1, 0, 0, 0, 0);
+    }
+    to = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
   } else {
-    from = new Date(2020, 0, 1); // all time
+    from = new Date(2020, 0, 1);
   }
 
   return {
@@ -39,14 +60,6 @@ export function getPeriodRange(period: Period, selectedDate?: string): { from: s
   };
 }
 
-export function getPeriodLabel(period: Period): string {
-  if (period === "day") return "Dnes";
-  if (period === "week") return "Tento týden";
-  if (period === "month") return "Tento měsíc";
-  return "Celé období";
-}
-
-// Loads picking + packing from Supabase for given period using pagination to overcome the 1000 rows limit
 async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
   let allData: any[] = [];
   let hasMore = true;
@@ -56,7 +69,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
   while (hasMore) {
     const { data, error } = await supabase
       .from("ltap_picking")
-      .select("tanum, tapos, picker_sap_id, dest_target_qty, confirmed_at")
+      .select("tanum, tapos, picker_sap_id, dest_target_qty, weight, confirmed_at")
       .gte("confirmed_at", from)
       .lte("confirmed_at", to)
       .not("picker_sap_id", "is", null)
@@ -71,10 +84,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
     if (data && data.length > 0) {
       allData = [...allData, ...data];
       page++;
-      // Pokud se stáhlo méně než 1000 záznamů, jsme na poslední stránce
-      if (data.length < pageSize) {
-        hasMore = false;
-      }
+      if (data.length < pageSize) hasMore = false;
     } else {
       hasMore = false;
     }
@@ -85,6 +95,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
     to_item: r.tapos,
     operator: r.picker_sap_id || "",
     quantity: r.dest_target_qty || 0,
+    weight: r.weight || 0,
     confirmed_at: new Date(r.confirmed_at),
   }));
 }
@@ -113,17 +124,13 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
     if (data && data.length > 0) {
       allData = [...allData, ...data];
       page++;
-      // Pokud se stáhlo méně než 1000 záznamů, jsme na poslední stránce
-      if (data.length < pageSize) {
-        hasMore = false;
-      }
+      if (data.length < pageSize) hasMore = false;
     } else {
       hasMore = false;
     }
   }
 
   return allData.map((r: any) => {
-    // Sum quantities from joined VEPO items
     const vepoItems = Array.isArray(r.vepo_packing_items) ? r.vepo_packing_items : [];
     const totalQuantity = vepoItems.reduce((sum: number, item: any) => sum + (Number(item.packed_quantity) || 0), 0);
     const material = vepoItems.length > 0 ? vepoItems[0].material : r.packaging_material;
@@ -140,30 +147,48 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
   });
 }
 
-// Main hook - ALWAYS fetches from Supabase, merges local (unsaved) data on top.
-// This ensures data shows on Vercel even after page refresh.
+// Rozšířený hook podporující porovnávací rozsah
 export function usePeriodData(
   period: Period,
   localPicking: PickingRecord[],
   localPacking: PackingRecord[],
-  selectedDate?: string
+  dateValue?: string,
+  isComparing?: boolean,
+  compareDateValue?: string
 ) {
   const [dbPicking, setDbPicking] = useState<PickingRecord[]>([]);
   const [dbPacking, setDbPacking] = useState<PackingRecord[]>([]);
+  const [compPicking, setCompPicking] = useState<PickingRecord[]>([]);
+  const [compPacking, setCompPacking] = useState<PackingRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
-    const { from, to } = getPeriodRange(period, selectedDate);
+    const { from, to } = getPeriodRange(period, dateValue);
     setLoading(true);
 
-    Promise.all([
+    const fetches = [
       fetchPickingFromDb(from, to),
       fetchPackingFromDb(from, to),
-    ]).then(([picking, packing]) => {
+    ];
+
+    if (isComparing && compareDateValue && period !== 'all') {
+      const compRange = getPeriodRange(period, compareDateValue);
+      fetches.push(fetchPickingFromDb(compRange.from, compRange.to));
+      fetches.push(fetchPackingFromDb(compRange.from, compRange.to));
+    }
+
+    Promise.all(fetches).then((results) => {
       if (!active) return;
-      setDbPicking(picking);
-      setDbPacking(packing);
+      setDbPicking(results[0] || []);
+      setDbPacking(results[1] || []);
+      if (results.length > 2) {
+        setCompPicking(results[2] || []);
+        setCompPacking(results[3] || []);
+      } else {
+        setCompPicking([]);
+        setCompPacking([]);
+      }
       setLoading(false);
     }).catch((err) => {
       if (!active) return;
@@ -171,12 +196,11 @@ export function usePeriodData(
       setLoading(false);
     });
     return () => { active = false; };
-  }, [period, selectedDate]);
+  }, [period, dateValue, isComparing, compareDateValue]);
 
-  // Merge: DB data + any local-only records not yet in DB
-  // (deduplicate by tanum+tapos for picking, internal_hu for packing AND filter by period)
+  // Sloučení hlavních dat s lokálními nepouloženými
   const pickingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period, selectedDate);
+    const { from, to } = getPeriodRange(period, dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -189,10 +213,10 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPicking, ...localOnly];
-  }, [dbPicking, localPicking, period, selectedDate]);
+  }, [dbPicking, localPicking, period, dateValue]);
 
   const packingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period, selectedDate);
+    const { from, to } = getPeriodRange(period, dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -204,28 +228,17 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPacking, ...localOnly];
-  }, [dbPacking, localPacking, period, selectedDate]);
+  }, [dbPacking, localPacking, period, dateValue]);
 
-  return { pickingData, packingData, loading };
+  return { pickingData, packingData, compPicking, compPacking, loading };
 }
 
-// Aggregation for charts - works on any picking/packing arrays
-export function aggregateToChartData(
-  pickingData: PickingRecord[],
-  packingData: PackingRecord[],
-  period: Period,
-  selectedDate?: string
-) {
+export function aggregateToChartData(pickingData: PickingRecord[], packingData: PackingRecord[], period: Period, dateValue?: string) {
   if (period === "day") {
-    // Hourly slots - same as before
     const chartDataMap = new Map<string, any>();
     hourlySlots.forEach(slot => {
       chartDataMap.set(`${slot.start} - ${slot.end}`, {
-        time: slot.start,
-        fullTime: `${slot.start} - ${slot.end}`,
-        picking: 0, packing: 0,
-        pickingTOsSet: new Set<string>(),
-        packingHUsSet: new Set<string>(),
+        time: slot.start, fullTime: `${slot.start} - ${slot.end}`, picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>(),
       });
     });
 
@@ -247,24 +260,19 @@ export function aggregateToChartData(
     });
 
     return Array.from(chartDataMap.values()).map(d => ({
-      time: d.time,
-      fullTime: d.fullTime,
-      picking: d.picking,
-      packing: d.packing,
-      pickingTOs: d.pickingTOsSet.size,
-      packingHUs: d.packingHUsSet.size,
+      time: d.time, fullTime: d.fullTime, picking: d.picking, packing: d.packing, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size,
     }));
   }
 
   if (period === "week") {
-    // Group by day of week
     const days = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
     const map = new Map<number, any>();
     for (let i = 1; i <= 7; i++) {
       map.set(i, { time: days[i-1], fullTime: days[i-1], picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>() });
     }
     pickingData.forEach(p => {
-      const d = new Date(p.confirmed_at).getDay() || 7;
+      let d = new Date(p.confirmed_at).getDay();
+      d = d === 0 ? 7 : d; // 1 = Monday, 7 = Sunday
       if (map.has(d)) {
         map.get(d).picking += p.quantity;
         map.get(d).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
@@ -272,7 +280,8 @@ export function aggregateToChartData(
     });
     packingData.forEach(p => {
       if (!p.created_at) return;
-      const d = new Date(p.created_at).getDay() || 7;
+      let d = new Date(p.created_at).getDay();
+      d = d === 0 ? 7 : d;
       if (map.has(d)) {
         map.get(d).packing += (p.quantity || 0);
         map.get(d).packingHUsSet.add(p.internal_hu);
@@ -282,9 +291,9 @@ export function aggregateToChartData(
   }
 
   if (period === "month") {
-    // Group by day number in month
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const { from } = getPeriodRange("month", dateValue);
+    const d = new Date(from);
+    const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
     const map = new Map<number, any>();
     for (let i = 1; i <= daysInMonth; i++) {
       map.set(i, { time: String(i), fullTime: `${i}.`, picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>() });
@@ -325,33 +334,4 @@ export function aggregateToChartData(
   return Array.from(map.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
-}
-
-// Aggregate shift A/B stats for any picking/packing arrays
-export function aggregateShiftStats(pickingData: PickingRecord[], packingData: PackingRecord[]) {
-  const a = { pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>() };
-  const b = { pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>() };
-
-  pickingData.forEach(p => {
-    if (!p.confirmed_at) return;
-    const shift = getShiftLabel(new Date(p.confirmed_at));
-    const t = shift === "A" ? a : b;
-    t.pickingKs += p.quantity;
-    t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
-    if (p.operator) t.operators.add(p.operator);
-  });
-  packingData.forEach(p => {
-    if (!p.created_at) return;
-    const shift = getShiftLabel(new Date(p.created_at));
-    const t = shift === "A" ? a : b;
-    t.packingKs += (p.quantity || 0);
-    t.weight += (p.weight || 0);
-    t.packingHUs.add(p.internal_hu);
-    if (p.operator) t.operators.add(p.operator);
-  });
-
-  return {
-    a: { pickingKs: a.pickingKs, packingKs: a.packingKs, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, weight: a.weight, operators: a.operators.size },
-    b: { pickingKs: b.pickingKs, packingKs: b.packingKs, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, weight: b.weight, operators: b.operators.size },
-  };
 }
