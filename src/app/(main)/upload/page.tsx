@@ -129,17 +129,17 @@ export default function UploadPage() {
   // Save VEKP data to Supabase
   const saveVekpToSupabase = async (json: any[], batchId: string) => {
     const rows = json.map(row => {
-      // U = 'Changed On' (MM/DD/YYYY), V = 'Time of change'
-      const changedAt = parseExcelDateTime(row['Changed On'], row['Time of change']);
-      changedAt.setHours(changedAt.getHours() + 2); // VEKP +2h
+      // R = 'Created On' (MM/DD/YYYY), S = 'Time'
+      const createdAt = parseExcelDateTime(row['Created On'], row['Time']);
+      createdAt.setHours(createdAt.getHours() + 2); // VEKP +2h
       return {
         batch_id: batchId,
         internal_hu_number: String(row['Internal HU number'] || ''),
         handling_unit: row['Handling Unit'] ? String(row['Handling Unit']) : null,
         created_by: row['Created By'] ? String(row['Created By']) : null,
-        packer_sap_id: String(row['Changed By'] || row['Created By'] || ''),
-        created_at: changedAt.toISOString(),
-        packed_at: changedAt.toISOString(),
+        packer_sap_id: String(row['Created By'] || ''),
+        created_at: createdAt.toISOString(),
+        packed_at: createdAt.toISOString(),
         total_weight: Number(row['Allowed Weight']) || Number(row['Total Weight']) || null,
         weight_unit: row['Unit of Weight'] ? String(row['Unit of Weight']) : null,
         delivery: row['Delivery'] ? String(row['Delivery']) : null,
@@ -247,13 +247,13 @@ export default function UploadPage() {
           } else if (filename.includes("VEKP")) {
             importType = "PACKING_HEADERS";
             parsedData = json.map(row => {
-              // U = 'Changed On' (MM/DD/YYYY), V = 'Time of change'
-              const dt = parseExcelDateTime(row['Changed On'], row['Time of change']);
+              // R = 'Created On' (MM/DD/YYYY), S = 'Time'
+              const dt = parseExcelDateTime(row['Created On'], row['Time']);
               dt.setHours(dt.getHours() + 2); // VEKP +2h
               return {
                 internal_hu: String(row['Internal HU number']),
                 hu_number: String(row['Handling Unit']),
-                operator: String(row['Changed By'] || ''), // sloupec T
+                operator: String(row['Created By'] || ''), // sloupec Q
                 quantity: 0,
                 created_at: dt,
               };
