@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PackageSearch, Box, Users, BarChart3, ArrowUpRight, ArrowDownRight, Download, Loader2 } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, PackageSearch, Box, BarChart3, Users, Download, Loader2 } from "lucide-react";
 import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { useData } from "@/lib/data-context";
-import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-period-data";
+import { usePeriodData, aggregateToChartData, getPreviousPeriodRange, type Period } from "@/lib/use-period-data";
 import PeriodSelector from "@/components/ui/PeriodSelector";
 import EmployeePerformance from "@/components/analytics/EmployeePerformance";
+import PdfReportTemplate from "@/components/analytics/PdfReportTemplate";
 
 export default function DashboardPage() {
   const todayStr = new Date().toISOString().split('T')[0];
@@ -84,28 +85,38 @@ export default function DashboardPage() {
       const { toJpeg } = await import('html-to-image');
       const { jsPDF } = await import('jspdf');
       
-      const element = document.getElementById('report-container');
-      if (!element) return;
+      const container = document.getElementById('pdf-export-template');
+      if (!container) return;
       
-      const dataUrl = await toJpeg(element, { 
-        quality: 1.0, 
-        backgroundColor: '#030507',
-        pixelRatio: 2,
-        style: {
-          background: '#030507'
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const margin = 10;
+      const usableWidth = pdfWidth - (margin * 2);
+
+      // Get Header and all inner sections
+      const header = container.firstElementChild as HTMLElement;
+      const contentWrapper = container.lastElementChild as HTMLElement;
+      const sections = [header, ...Array.from(contentWrapper.children)] as HTMLElement[];
+      
+      let yOffset = margin;
+
+      for (const section of sections) {
+        if (!section || section.offsetHeight === 0) continue;
+        
+        const imgData = await toJpeg(section, { quality: 1.0, backgroundColor: '#030507', pixelRatio: 2 });
+        const imgProps = pdf.getImageProperties(imgData);
+        const imgHeight = (imgProps.height * usableWidth) / imgProps.width;
+
+        if (yOffset + imgHeight > pdfHeight - margin) {
+          pdf.addPage();
+          yOffset = margin;
         }
-      });
+
+        pdf.addImage(imgData, 'JPEG', margin, yOffset, usableWidth, imgHeight);
+        yOffset += imgHeight + 8; // small gap
+      }
       
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'mm',
-        format: 'a4'
-      });
-      
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (element.offsetHeight * pdfWidth) / element.offsetWidth;
-      
-      pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`Hellmann_Report_${dateValue || todayStr}.pdf`);
     } catch (error) {
       console.error("PDF Export failed", error);
@@ -335,6 +346,17 @@ export default function DashboardPage() {
         packingData={packingData} 
         loading={loading} 
       />
+      
+      {/* Skrytá šablona pro generování PDF */}
+      <div className="absolute left-[-9999px] top-0 opacity-0 pointer-events-none overflow-visible">
+        <PdfReportTemplate 
+          pickingData={pickingData}
+          packingData={packingData}
+          chartData={chartData}
+          period={period}
+          dateValue={dateValue}
+        />
+      </div>
     </div>
   );
 }
