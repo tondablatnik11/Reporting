@@ -1,22 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PackageSearch, Box, TrendingUp, Users, BarChart3 } from "lucide-react";
-import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { PackageSearch, Box, Users, BarChart3 } from "lucide-react";
+import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { useData } from "@/lib/data-context";
 import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-period-data";
 import PeriodSelector from "@/components/ui/PeriodSelector";
 import EmployeePerformance from "@/components/analytics/EmployeePerformance";
 
 export default function DashboardPage() {
+  const todayStr = new Date().toISOString().split('T')[0];
   const [period, setPeriod] = useState<Period>("day");
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [dateValue, setDateValue] = useState<string>(todayStr);
 
   const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, selectedDate);
+  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue);
 
-  // We need to calculate chartData and totals based on the filtered data
-  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, selectedDate), [pickingData, packingData, period, selectedDate]);
+  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
   
   let totalPicking = 0;
   let totalPacking = 0;
@@ -37,7 +37,6 @@ export default function DashboardPage() {
   const totalPickingTOs = globalPickingTOs.size;
   const totalPackingHUs = globalPackingHUs.size;
 
-  // Calculate real operator counts
   const { uniquePickerCount, uniquePackerCount, topPickers, topPackers } = useMemo(() => {
     const pickerSet = new Set<string>();
     const packerSet = new Set<string>();
@@ -78,26 +77,22 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-wide">Celkový Přehled Výkonu</h1>
-          <p className="text-white/40 text-sm mt-1">Denní souhrn všech operací na skladu</p>
+          <p className="text-white/40 text-sm mt-1">Souhrn operací na skladu pro zvolené období</p>
         </div>
         <div className="flex items-center gap-4">
           <PeriodSelector 
-            value={period} 
-            onChange={setPeriod} 
+            period={period} 
+            onChangePeriod={setPeriod} 
+            dateValue={dateValue}
+            onChangeDate={setDateValue}
             loading={loading}
-            selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
           />
-          <div className="text-sm font-medium text-white/50 bg-white/5 px-4 py-2 rounded-full border border-white/10 hidden md:block">
-            Směna: Ranní & Odpolední (05:45 - 21:45)
-          </div>
         </div>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="glass-panel p-6 relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -143,10 +138,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Chart + Top Operators */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="glass-panel p-6 col-span-2 flex flex-col">
-          <h3 className="text-lg font-bold text-white mb-5">Vývoj produktivity během směny</h3>
+          <h3 className="text-lg font-bold text-white mb-5">Vývoj produktivity</h3>
           <div className="flex-1 w-full min-h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -172,7 +166,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Top Operators Sidebar */}
         <div className="space-y-5">
           <div className="glass-panel p-5">
             <h4 className="text-xs font-bold text-white/40 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -214,9 +207,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Full Employee Table */}
       <EmployeePerformance 
-        timeRange="daily" 
         filterType="all" 
         pickingData={pickingData} 
         packingData={packingData} 
