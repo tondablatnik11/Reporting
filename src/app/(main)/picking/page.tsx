@@ -198,7 +198,13 @@ export default function PickingPage() {
         </div>
       </div>
 
-      <EmployeePerformance timeRange="daily" filterType="picking" />
+      <EmployeePerformance 
+        timeRange="daily" 
+        filterType="picking" 
+        pickingData={pickingData} 
+        packingData={packingData} 
+        loading={loading} 
+      />
 
       {/* Recent Activity */}
       <div className="glass-panel overflow-hidden">
