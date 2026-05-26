@@ -8,10 +8,11 @@ import { usePeriodData, aggregateShiftStats, type Period } from "@/lib/use-perio
 import PeriodSelector from "@/components/ui/PeriodSelector";
 
 export default function ShiftComparisonPage() {
+  const todayStr = new Date().toISOString().split('T')[0];
   const [period, setPeriod] = useState<Period>("day");
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [dateValue, setDateValue] = useState<string>(todayStr);
   const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, selectedDate);
+  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue);
 
   const currentWeek = getISOWeekNumber(new Date());
   const isEvenWeek = currentWeek % 2 === 0;
@@ -77,7 +78,7 @@ export default function ShiftComparisonPage() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-wide flex items-center gap-2">
             <BarChart3 className="w-6 h-6" /> Porovnání Směn
@@ -87,11 +88,11 @@ export default function ShiftComparisonPage() {
           </p>
         </div>
         <PeriodSelector 
-            value={period} 
-            onChange={setPeriod} 
+            period={period} 
+            onChangePeriod={setPeriod} 
             loading={loading}
-            selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
+            dateValue={dateValue}
+            onChangeDate={setDateValue}
         />
       </div>
 
