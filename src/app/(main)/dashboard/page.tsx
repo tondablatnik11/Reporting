@@ -81,24 +81,20 @@ export default function DashboardPage() {
   const exportPDF = async () => {
     setIsExporting(true);
     try {
-      const html2canvas = (await import('html2canvas')).default;
+      const { toJpeg } = await import('html-to-image');
       const { jsPDF } = await import('jspdf');
       
       const element = document.getElementById('report-container');
       if (!element) return;
       
-      // Temporarily expand the element for full capture if needed
-      element.style.background = '#030507';
-      
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
+      const dataUrl = await toJpeg(element, { 
+        quality: 1.0, 
         backgroundColor: '#030507',
-        windowWidth: 1200,
+        pixelRatio: 2,
+        style: {
+          background: '#030507'
+        }
       });
-      
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
       
       const pdf = new jsPDF({
         orientation: 'landscape',
@@ -107,9 +103,9 @@ export default function DashboardPage() {
       });
       
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeight = (element.offsetHeight * pdfWidth) / element.offsetWidth;
       
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`Hellmann_Report_${dateValue || todayStr}.pdf`);
     } catch (error) {
       console.error("PDF Export failed", error);
@@ -197,7 +193,7 @@ export default function DashboardPage() {
             </div>
             {period !== "all" && (
               <div className="mt-4 flex items-center gap-1.5">
-                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${pickTrend.isPositive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${pickTrend.isPositive ? 'trend-up' : 'trend-down'}`}>
                   {pickTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                   {pickTrend.text}
                 </div>
@@ -219,7 +215,7 @@ export default function DashboardPage() {
             </div>
             {period !== "all" && (
               <div className="mt-4 flex items-center gap-1.5">
-                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${packTrend.isPositive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${packTrend.isPositive ? 'trend-up' : 'trend-down'}`}>
                   {packTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                   {packTrend.text}
                 </div>
@@ -240,7 +236,7 @@ export default function DashboardPage() {
             </div>
             {period !== "all" && (
               <div className="mt-4 flex items-center gap-1.5">
-                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${avgTrend.isPositive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${avgTrend.isPositive ? 'trend-up' : 'trend-down'}`}>
                   {avgTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                   {avgTrend.text}
                 </div>

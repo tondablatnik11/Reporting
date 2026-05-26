@@ -1,6 +1,28 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
+@theme {
+  --color-blue-300: #93c5fd;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-purple-400: #c084fc;
+  --color-purple-500: #a855f7;
+  --color-emerald-400: #34d399;
+  --color-emerald-500: #10b981;
+  --color-red-400: #f87171;
+  --color-red-500: #ef4444;
+  --color-amber-400: #fbbf24;
+}
+
+@utility trend-up {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+@utility trend-down {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
 :root {
   --background: #030507;
   --foreground: #e8ecf4;
