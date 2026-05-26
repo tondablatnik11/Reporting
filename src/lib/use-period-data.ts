@@ -192,32 +192,51 @@ export function usePeriodData(
   period: Period,
   localPicking: PickingRecord[],
   localPacking: PackingRecord[],
-  selectedDate?: string
+  dateValue?: string,
+  isComparing?: boolean,
+  compareDateValue?: string
 ) {
   const [dbPicking, setDbPicking] = useState<PickingRecord[]>([]);
   const [dbPacking, setDbPacking] = useState<PackingRecord[]>([]);
   const [dbPrevPicking, setDbPrevPicking] = useState<PickingRecord[]>([]);
   const [dbPrevPacking, setDbPrevPacking] = useState<PackingRecord[]>([]);
+  const [compPicking, setCompPicking] = useState<PickingRecord[]>([]);
+  const [compPacking, setCompPacking] = useState<PackingRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
-    const { from, to } = getPeriodRange(period, selectedDate);
-    const { from: prevFrom, to: prevTo } = getPreviousPeriodRange(period, selectedDate);
+    const { from, to } = getPeriodRange(period, dateValue);
+    const { from: prevFrom, to: prevTo } = getPreviousPeriodRange(period, dateValue);
     
     setLoading(true);
 
-    Promise.all([
+    const fetches = [
       fetchPickingFromDb(from, to),
       fetchPackingFromDb(from, to),
       period !== "all" ? fetchPickingFromDb(prevFrom, prevTo) : Promise.resolve([]),
       period !== "all" ? fetchPackingFromDb(prevFrom, prevTo) : Promise.resolve([]),
-    ]).then(([picking, packing, prevPicking, prevPacking]) => {
+    ];
+
+    if (isComparing && compareDateValue && period !== 'all') {
+      const compRange = getPeriodRange(period, compareDateValue);
+      fetches.push(fetchPickingFromDb(compRange.from, compRange.to));
+      fetches.push(fetchPackingFromDb(compRange.from, compRange.to));
+    }
+
+    Promise.all(fetches).then((results) => {
       if (!active) return;
-      setDbPicking(picking);
-      setDbPacking(packing);
-      setDbPrevPicking(prevPicking);
-      setDbPrevPacking(prevPacking);
+      setDbPicking((results[0] as PickingRecord[]) || []);
+      setDbPacking((results[1] as PackingRecord[]) || []);
+      setDbPrevPicking((results[2] as PickingRecord[]) || []);
+      setDbPrevPacking((results[3] as PackingRecord[]) || []);
+      if (results.length > 4) {
+        setCompPicking((results[4] as PickingRecord[]) || []);
+        setCompPacking((results[5] as PackingRecord[]) || []);
+      } else {
+        setCompPicking([]);
+        setCompPacking([]);
+      }
       setLoading(false);
     }).catch((err) => {
       if (!active) return;
@@ -225,10 +244,10 @@ export function usePeriodData(
       setLoading(false);
     });
     return () => { active = false; };
-  }, [period, selectedDate]);
+  }, [period, dateValue, isComparing, compareDateValue]);
 
   const pickingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period, selectedDate);
+    const { from, to } = getPeriodRange(period, dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -241,10 +260,10 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPicking, ...localOnly];
-  }, [dbPicking, localPicking, period, selectedDate]);
+  }, [dbPicking, localPicking, period, dateValue]);
 
   const packingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period, selectedDate);
+    const { from, to } = getPeriodRange(period, dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -256,11 +275,11 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPacking, ...localOnly];
-  }, [dbPacking, localPacking, period, selectedDate]);
+  }, [dbPacking, localPacking, period, dateValue]);
 
   const previousPickingData = useMemo(() => {
     if (period === "all") return [];
-    const { from, to } = getPreviousPeriodRange(period, selectedDate);
+    const { from, to } = getPreviousPeriodRange(period, dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -272,11 +291,11 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPrevPicking, ...localOnly];
-  }, [dbPrevPicking, localPicking, period, selectedDate]);
+  }, [dbPrevPicking, localPicking, period, dateValue]);
 
   const previousPackingData = useMemo(() => {
     if (period === "all") return [];
-    const { from, to } = getPreviousPeriodRange(period, selectedDate);
+    const { from, to } = getPreviousPeriodRange(period, dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
 
@@ -288,9 +307,9 @@ export function usePeriodData(
       return time >= fromTime && time <= toTime;
     });
     return [...dbPrevPacking, ...localOnly];
-  }, [dbPrevPacking, localPacking, period, selectedDate]);
+  }, [dbPrevPacking, localPacking, period, dateValue]);
 
-  return { pickingData, packingData, previousPickingData, previousPackingData, loading };
+  return { pickingData, packingData, previousPickingData, previousPackingData, compPicking, compPacking, loading };
 }
 
 export function aggregateToChartData(pickingData: PickingRecord[], packingData: PackingRecord[], period: Period, dateValue?: string) {
