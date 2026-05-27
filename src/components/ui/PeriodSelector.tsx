@@ -43,10 +43,21 @@ export default function PeriodSelector({
 
   const handlePeriodClick = (p: Period) => {
     onChangePeriod(p);
-    if (p === "day" && !dateValue.includes("-") && dateValue.length !== 10) onChangeDate(defaultDay);
-    if (p === "week" && !dateValue.includes("-W")) onChangeDate(defaultWeek);
+    
+    // Bezpečnější logika přepínání formátu: hlídáme striktně strukturu nebo její délku
+    if (p === "day" && dateValue.length !== 10) onChangeDate(defaultDay);
+    if (p === "week" && !dateValue.includes("W")) onChangeDate(defaultWeek);
     if (p === "month" && dateValue.length !== 7) onChangeDate(defaultMonth);
+    
     if (p === "all" && onToggleCompare) onToggleCompare(false);
+
+    // Ošetření hranové situace: pokud uživatel mění periodu během aktivního porovnávání,
+    // musíme zresetovat a zarovnat i porovnávací formát data
+    if (isComparing && onChangeCompareDate && compareDateValue) {
+      if (p === "day" && compareDateValue.length !== 10) onChangeCompareDate(defaultDay);
+      if (p === "week" && !compareDateValue.includes("W")) onChangeCompareDate(defaultWeek);
+      if (p === "month" && compareDateValue.length !== 7) onChangeCompareDate(defaultMonth);
+    }
   };
 
   const inputType = period === "day" ? "date" : period === "week" ? "week" : period === "month" ? "month" : "text";
