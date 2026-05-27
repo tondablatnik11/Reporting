@@ -26,7 +26,11 @@ export function getPeriodRange(period: Period, dateValue?: string): { from: stri
   let to = new Date();
 
   if (period === "day") {
-    if (dateValue) from = new Date(dateValue);
+    if (dateValue) {
+      from = new Date(dateValue);
+      // Fallback záchrana: Pokud přijde řetězec, ze kterého JS neumí postavit datum (např. 2026-W22), zabráníme pádu
+      if (isNaN(from.getTime())) from = new Date(); 
+    }
     from.setHours(0, 0, 0, 0);
     to = new Date(from);
     to.setHours(23, 59, 59, 999);
@@ -34,6 +38,11 @@ export function getPeriodRange(period: Period, dateValue?: string): { from: stri
     if (dateValue && dateValue.includes("-W")) {
       const [y, w] = dateValue.split("-W");
       from = getStartOfWeek(Number(y), Number(w));
+      if (isNaN(from.getTime())) {
+        from = new Date();
+        const day = from.getDay() || 7;
+        from.setDate(from.getDate() - day + 1);
+      }
     } else {
       const day = from.getDay() || 7;
       from.setDate(from.getDate() - day + 1);
@@ -43,9 +52,13 @@ export function getPeriodRange(period: Period, dateValue?: string): { from: stri
     to.setDate(to.getDate() + 6);
     to.setHours(23, 59, 59, 999);
   } else if (period === "month") {
-    if (dateValue && dateValue.includes("-")) {
+    // Obrana proti splitu nad formátem týdne, který sice má pomlčku, ale nejedná se o měsíc
+    if (dateValue && dateValue.includes("-") && !dateValue.includes("W")) {
       const [y, m] = dateValue.split("-");
       from = new Date(Number(y), Number(m) - 1, 1, 0, 0, 0, 0);
+      if (isNaN(from.getTime())) {
+        from = new Date(new Date().getFullYear(), new Date().getMonth(), 1, 0, 0, 0, 0);
+      }
     } else {
       from = new Date(from.getFullYear(), from.getMonth(), 1, 0, 0, 0, 0);
     }
@@ -65,7 +78,11 @@ export function getPreviousPeriodRange(period: Period, dateValue?: string): { fr
   let to = new Date();
 
   if (period === "day") {
-    if (dateValue) from = new Date(dateValue);
+    if (dateValue) {
+      from = new Date(dateValue);
+      // Fallback záchrana
+      if (isNaN(from.getTime())) from = new Date();
+    }
     from.setDate(from.getDate() - 1);
     from.setHours(0, 0, 0, 0);
     to = new Date(from);
@@ -74,6 +91,11 @@ export function getPreviousPeriodRange(period: Period, dateValue?: string): { fr
     if (dateValue && dateValue.includes("-W")) {
       const [y, w] = dateValue.split("-W");
       from = getStartOfWeek(Number(y), Number(w) - 1);
+      if (isNaN(from.getTime())) {
+        from = new Date();
+        const day = from.getDay() || 7;
+        from.setDate(from.getDate() - day + 1 - 7);
+      }
     } else {
       const day = from.getDay() || 7;
       from.setDate(from.getDate() - day + 1 - 7);
@@ -83,9 +105,12 @@ export function getPreviousPeriodRange(period: Period, dateValue?: string): { fr
     to.setDate(to.getDate() + 6);
     to.setHours(23, 59, 59, 999);
   } else if (period === "month") {
-    if (dateValue && dateValue.includes("-")) {
+    if (dateValue && dateValue.includes("-") && !dateValue.includes("W")) {
       const [y, m] = dateValue.split("-");
       from = new Date(Number(y), Number(m) - 2, 1, 0, 0, 0, 0);
+      if (isNaN(from.getTime())) {
+         from = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1, 0, 0, 0, 0);
+      }
     } else {
       from = new Date(from.getFullYear(), from.getMonth() - 1, 1, 0, 0, 0, 0);
     }
