@@ -12,7 +12,8 @@ import {
   Tv,
   Users2,
   Clock,
-  BarChart3
+  BarChart3,
+  Truck
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -64,6 +65,39 @@ export default function Sidebar() {
         >
           <Box className="w-5 h-5" />
           Packing
+        </Link>
+
+        <div className="nav-category">Detailní Analytika</div>
+        <Link
+          href="/analytics/pick"
+          className={`nav-item ${isActive("/analytics/pick") ? "active" : ""}`}
+        >
+          <PackageSearch className="w-5 h-5" />
+          Pick Analytika
+        </Link>
+
+        <Link
+          href="/analytics/pack"
+          className={`nav-item ${isActive("/analytics/pack") ? "active" : ""}`}
+        >
+          <Box className="w-5 h-5" />
+          Pack Analytika
+        </Link>
+
+        <Link
+          href="/analytics/delivery"
+          className={`nav-item ${isActive("/analytics/delivery") ? "active" : ""}`}
+        >
+          <Truck className="w-5 h-5" />
+          Delivery Analytika
+        </Link>
+
+        <Link
+          href="/analytics/predictions"
+          className={`nav-item ${isActive("/analytics/predictions") ? "active" : ""}`}
+        >
+          <TrendingUp className="w-5 h-5" />
+          Predikce
         </Link>
 
         <div className="nav-category">Srovnání Výkonů</div>

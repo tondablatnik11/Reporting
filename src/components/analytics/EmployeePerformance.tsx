@@ -43,11 +43,25 @@ export default function EmployeePerformance({
       packingKs: number;
       weight: number;
       shifts: Set<string>;
+      pickingCategories: Record<string, Set<string>>;
+      packingCategories: Record<string, Set<string>>;
+      pickingQueues: Record<string, Set<string>>;
     }>();
 
     const addStat = (op: string) => {
       if (!statsMap.has(op)) {
-        statsMap.set(op, { operator: op, pickingTOs: new Set(), pickingKs: 0, packingHUs: new Set(), packingKs: 0, weight: 0, shifts: new Set() });
+        statsMap.set(op, { 
+          operator: op, 
+          pickingTOs: new Set(), 
+          pickingKs: 0, 
+          packingHUs: new Set(), 
+          packingKs: 0, 
+          weight: 0, 
+          shifts: new Set(),
+          pickingCategories: { Normal: new Set(), Express: new Set(), OE: new Set() },
+          packingCategories: { Normal: new Set(), Express: new Set(), OE: new Set() },
+          pickingQueues: {}
+        });
       }
       return statsMap.get(op)!;
     };
@@ -56,8 +70,18 @@ export default function EmployeePerformance({
       if (!p.operator) return;
       const stat = addStat(p.operator);
       stat.pickingKs += p.quantity;
-      stat.pickingTOs.add(`${p.to_number}-${p.to_item || '1'}`);
+      const toKey = `${p.to_number}-${p.to_item || '1'}`;
+      stat.pickingTOs.add(toKey);
       stat.weight += (p.weight || 0);
+      
+      const cat = p.category || 'Normal';
+      if (!stat.pickingCategories[cat]) stat.pickingCategories[cat] = new Set();
+      stat.pickingCategories[cat].add(toKey);
+
+      const queue = p.queue || 'Ostatní';
+      if (!stat.pickingQueues[queue]) stat.pickingQueues[queue] = new Set();
+      stat.pickingQueues[queue].add(toKey);
+
       if (p.confirmed_at) {
         const hour = new Date(p.confirmed_at).getHours();
         stat.shifts.add(hour >= 5 && hour < 14 ? "Ranní" : "Odpolední");
@@ -69,23 +93,53 @@ export default function EmployeePerformance({
       const stat = addStat(p.operator);
       stat.packingKs += (p.quantity || 0);
       stat.weight += (p.weight || 0);
-      if (p.internal_hu) stat.packingHUs.add(p.internal_hu);
+      
+      if (p.internal_hu) {
+        stat.packingHUs.add(p.internal_hu);
+        const cat = p.category || 'Normal';
+        if (!stat.packingCategories[cat]) stat.packingCategories[cat] = new Set();
+        stat.packingCategories[cat].add(p.internal_hu);
+      }
+      
       if (p.created_at) {
         const hour = new Date(p.created_at).getHours();
         stat.shifts.add(hour >= 5 && hour < 14 ? "Ranní" : "Odpolední");
       }
     });
 
-    const rawStats = Array.from(statsMap.values()).map(s => ({
-      operator: s.operator,
-      pickingTOs: s.pickingTOs.size,
-      pickingKs: s.pickingKs,
-      packingHUs: s.packingHUs.size,
-      packingKs: s.packingKs,
-      weight: s.weight,
-      totalKs: s.pickingKs + s.packingKs,
-      shiftLabel: Array.from(s.shifts).sort().join(" / ") || "-"
-    }));
+    const rawStats = Array.from(statsMap.values()).map(s => {
+      const pickCatStats = {
+        Normal: s.pickingCategories['Normal']?.size || 0,
+        Express: s.pickingCategories['Express']?.size || 0,
+        OE: s.pickingCategories['OE']?.size || 0,
+      };
+      
+      const packCatStats = {
+        Normal: s.packingCategories['Normal']?.size || 0,
+        Express: s.packingCategories['Express']?.size || 0,
+        OE: s.packingCategories['OE']?.size || 0,
+      };
+
+      const queueStats = {
+        PI_PA: (s.pickingQueues['PI_PA']?.size || 0) + (s.pickingQueues['PI_PA_OE']?.size || 0),
+        PI_PL: (s.pickingQueues['PI_PL']?.size || 0) + (s.pickingQueues['PI_PL_OE']?.size || 0),
+        PI_PL_FU: (s.pickingQueues['PI_PL_FU']?.size || 0) + (s.pickingQueues['PI_PL_FUOE']?.size || 0),
+      };
+
+      return {
+        operator: s.operator,
+        pickingTOs: s.pickingTOs.size,
+        pickingKs: s.pickingKs,
+        packingHUs: s.packingHUs.size,
+        packingKs: s.packingKs,
+        weight: s.weight,
+        totalKs: s.pickingKs + s.packingKs,
+        shiftLabel: Array.from(s.shifts).sort().join(" / ") || "-",
+        pickCatStats,
+        packCatStats,
+        queueStats,
+      };
+    });
 
     const filtered = rawStats.filter(s => {
       if (filterType === "picking") return s.pickingTOs > 0;
@@ -97,6 +151,12 @@ export default function EmployeePerformance({
       let valA = a[sortCol];
       let valB = b[sortCol];
 
+      if (sortCol.includes('.')) {
+        const parts = sortCol.split('.');
+        valA = a[parts[0]]?.[parts[1]];
+        valB = b[parts[0]]?.[parts[1]];
+      }
+
       if (sortCol === "avgKs") {
         valA = a.pickingTOs > 0 ? a.pickingKs / a.pickingTOs : 0;
         valB = b.pickingTOs > 0 ? b.pickingKs / b.pickingTOs : 0;
@@ -105,7 +165,7 @@ export default function EmployeePerformance({
       if (typeof valA === 'string') {
         return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }
-      return sortDir === 'asc' ? valA - valB : valB - valA;
+      return sortDir === 'asc' ? (valA || 0) - (valB || 0) : (valB || 0) - (valA || 0);
     });
   }, [finalPicking, finalPacking, filterType, sortCol, sortDir]);
 
@@ -174,15 +234,21 @@ export default function EmployeePerformance({
               {filterType === "picking" && (
                 <>
                   <Th id="pickingTOs" label="Vypickované TO" align="right" />
-                  <Th id="pickingKs" label="Celkem Kusů (Ks)" align="right" />
+                  <Th id="pickCatStats.Normal" label="Normal TO" align="right" />
+                  <Th id="pickCatStats.Express" label="Express TO" align="right" />
+                  <Th id="pickCatStats.OE" label="OE TO" align="right" />
+                  <Th id="queueStats.PI_PA" label="Z toho Balíky (PI_PA)" align="right" />
+                  <Th id="queueStats.PI_PL" label="Z toho Palety (PI_PL)" align="right" />
                   <Th id="avgKs" label="Průměr Ks / TO" align="right" />
-                  <Th id="weight" label="Váha (kg)" align="right" />
                 </>
               )}
 
               {filterType === "packing" && (
                 <>
                   <Th id="packingHUs" label="Zabalené HU" align="right" />
+                  <Th id="packCatStats.Normal" label="Normal HU" align="right" />
+                  <Th id="packCatStats.Express" label="Express HU" align="right" />
+                  <Th id="packCatStats.OE" label="OE HU" align="right" />
                   <Th id="packingKs" label="Celkem Kusů (Ks)" align="right" />
                   <Th id="weight" label="Váha (kg)" align="right" />
                 </>
@@ -211,15 +277,21 @@ export default function EmployeePerformance({
                   {filterType === "picking" && (
                     <>
                       <td className="px-5 py-3.5 text-sm font-bold text-white/90 text-right">{row.pickingTOs.toLocaleString()}</td>
-                      <td className="px-5 py-3.5 text-sm font-semibold text-blue-400 text-right">{row.pickingKs.toLocaleString()}</td>
+                      <td className="px-5 py-3.5 text-sm text-white/60 text-right">{row.pickCatStats.Normal.toLocaleString()}</td>
+                      <td className="px-5 py-3.5 text-sm text-yellow-400/80 text-right">{row.pickCatStats.Express.toLocaleString()}</td>
+                      <td className="px-5 py-3.5 text-sm font-semibold text-rose-400 text-right">{row.pickCatStats.OE.toLocaleString()}</td>
+                      <td className="px-5 py-3.5 text-sm text-white/50 text-right">{row.queueStats.PI_PA.toLocaleString()}</td>
+                      <td className="px-5 py-3.5 text-sm text-white/50 text-right">{row.queueStats.PI_PL.toLocaleString()}</td>
                       <td className="px-5 py-3.5 text-sm text-white/60 text-right">{avgKsPerTo.toLocaleString()}</td>
-                      <td className="px-5 py-3.5 text-sm text-white/60 text-right">{row.weight.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
                     </>
                   )}
 
                   {filterType === "packing" && (
                     <>
                       <td className="px-5 py-3.5 text-sm font-bold text-white/90 text-right">{row.packingHUs.toLocaleString()}</td>
+                      <td className="px-5 py-3.5 text-sm text-white/60 text-right">{row.packCatStats.Normal.toLocaleString()}</td>
+                      <td className="px-5 py-3.5 text-sm text-yellow-400/80 text-right">{row.packCatStats.Express.toLocaleString()}</td>
+                      <td className="px-5 py-3.5 text-sm font-semibold text-rose-400 text-right">{row.packCatStats.OE.toLocaleString()}</td>
                       <td className="px-5 py-3.5 text-sm font-semibold text-purple-400 text-right">{row.packingKs.toLocaleString()}</td>
                       <td className="px-5 py-3.5 text-sm text-white/60 text-right">{row.weight.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
                     </>

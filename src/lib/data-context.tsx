@@ -9,16 +9,25 @@ export type PickingRecord = {
   quantity: number;
   weight?: number;
   confirmed_at: Date;
+  queue?: string;
+  delivery?: string;
+  category?: string;
+  material?: string;
+  source_storage_bin?: string;
 };
 
 export type PackingRecord = {
   internal_hu: string;
   hu_number?: string;
-  material?: string;
+  material?: string; // used for single item
+  materials?: string[]; // used to collect all materials
+  packaging_material?: string; // e.g. CARTON-05
   operator?: string;
   quantity?: number;
   weight?: number;
   created_at?: Date;
+  category?: string; // e.g. Normal, Express, OE
+  delivery?: string;
 };
 
 export const hourlySlots = [
@@ -106,8 +115,10 @@ export function getShiftLabel(date: Date): "A" | "B" {
 type DataContextType = {
   pickingData: PickingRecord[];
   packingData: PackingRecord[];
+  likpData: Record<string, string>;
   addPickingData: (data: PickingRecord[]) => void;
   addPackingData: (data: PackingRecord[]) => void;
+  addLikpData: (data: {delivery: string, shipping_point: string}[]) => void;
   clearData: () => void;
 };
 
@@ -116,6 +127,21 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [pickingData, setPickingData] = useState<PickingRecord[]>([]);
   const [packingData, setPackingData] = useState<PackingRecord[]>([]);
+  const [likpData, setLikpData] = useState<Record<string, string>>({});
+
+  const addLikpData = (data: {delivery: string, shipping_point: string}[]) => {
+    setLikpData(prev => {
+      const next = { ...prev };
+      data.forEach(item => {
+         let cat = "Normal";
+         if (item.shipping_point === "FM21" || item.shipping_point === "FM22") cat = "Express";
+         else if (item.shipping_point === "FM24") cat = "OE";
+         // FM20, FM23 is Normal
+         next[item.delivery] = cat;
+      });
+      return next;
+    });
+  };
 
   const addPickingData = (data: PickingRecord[]) => {
     setPickingData(prev => [...prev, ...data]);
@@ -129,16 +155,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       
       [...prev, ...data].forEach(item => {
         if (!map.has(item.internal_hu)) {
-          map.set(item.internal_hu, { ...item });
+          map.set(item.internal_hu, { 
+            ...item, 
+            materials: item.material ? [item.material] : (item.materials || []) 
+          });
         } else {
           const existing = map.get(item.internal_hu)!;
+          
+          const combinedMaterials = new Set(existing.materials || []);
+          if (existing.material) combinedMaterials.add(existing.material);
+          if (item.material) combinedMaterials.add(item.material);
+          if (item.materials) item.materials.forEach(m => combinedMaterials.add(m));
+
           map.set(item.internal_hu, {
             ...existing,
             ...item,
             operator: item.operator || existing.operator,
             created_at: item.created_at || existing.created_at,
             material: item.material || existing.material,
+            materials: Array.from(combinedMaterials),
             quantity: item.quantity || existing.quantity,
+            packaging_material: item.packaging_material || existing.packaging_material,
+            category: item.category || existing.category,
+            delivery: item.delivery || existing.delivery,
           });
         }
       });
@@ -149,10 +188,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const clearData = () => {
     setPickingData([]);
     setPackingData([]);
+    setLikpData({});
   };
 
   return (
-    <DataContext.Provider value={{ pickingData, packingData, addPickingData, addPackingData, clearData }}>
+    <DataContext.Provider value={{ pickingData, packingData, likpData, addPickingData, addPackingData, addLikpData, clearData }}>
       {children}
     </DataContext.Provider>
   );
@@ -194,7 +234,18 @@ import { loadDailyPerformance, loadMonthlyPerformance, loadWeeklyPerformance, Da
 export function useAggregatedData() {
   // Get current date in YYYY-MM-DD format
   const today = new Date().toISOString().split('T')[0];
-  const { pickingData, packingData } = useData();
+  const { pickingData, packingData, likpData } = useData();
+
+  // Obohacení dat o kategorie z LIKP
+  const enrichedPickingData = pickingData.map(p => ({
+    ...p,
+    category: p.delivery && likpData[p.delivery] ? likpData[p.delivery] : "Normal"
+  }));
+
+  const enrichedPackingData = packingData.map(p => ({
+    ...p,
+    category: p.category || (p.delivery && likpData[p.delivery] ? likpData[p.delivery] : "Normal")
+  }));
 
   const chartDataMap = new Map();
   hourlySlots.forEach(slot => {
@@ -219,7 +270,7 @@ export function useAggregatedData() {
   const globalPackingHUs = new Set();
 
   // Process picking data and determine shift based on time
-  pickingData.forEach(p => {
+  enrichedPickingData.forEach(p => {
     const slot = getSlot(p.confirmed_at);
     if (chartDataMap.has(slot)) {
       chartDataMap.get(slot).picking += p.quantity;
@@ -238,7 +289,7 @@ export function useAggregatedData() {
   });
 
   // Process packing data and determine shift based on time
-  packingData.forEach(p => {
+  enrichedPackingData.forEach(p => {
     if (p.created_at) {
       const slot = getSlot(p.created_at);
       if (chartDataMap.has(slot)) {
@@ -277,8 +328,8 @@ export function useAggregatedData() {
     totalPacking,
     totalPickingTOs: globalPickingTOs.size,
     totalPackingHUs: globalPackingHUs.size,
-    pickingData,
-    packingData,
+    pickingData: enrichedPickingData,
+    packingData: enrichedPackingData,
     // Add method to get historical data for previous days
     getPreviousDayData: async (daysAgo: number) => {
       const date = new Date();

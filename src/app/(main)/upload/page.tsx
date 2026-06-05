@@ -21,7 +21,7 @@ export default function UploadPage() {
   const [results, setResults] = useState<any[]>([]);
   const [saveToDb, setSaveToDb] = useState(true);
 
-  const { addPickingData, addPackingData, clearData } = useData();
+  const { addPickingData, addPackingData, addLikpData, clearData } = useData();
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -113,7 +113,11 @@ export default function UploadPage() {
         confirmed_at: confirmedAt.toISOString(),
         warehouse_number: row['Warehouse Number'] ? String(row['Warehouse Number']) : null,
         source_storage_type: row['Source Storage Type'] ? String(row['Source Storage Type']) : null,
+        source_storage_bin: row['Source Storage Bin'] ? String(row['Source Storage Bin']) : null,
+        source_storage_section: row['Source Storage Section'] ? String(row['Source Storage Section']) : null,
         dest_storage_type: row['Dest.Storage Type'] ? String(row['Dest.Storage Type']) : null,
+        dest_storage_bin: row['Dest.Storage Bin'] ? String(row['Dest.Storage Bin']) : null,
+        delivery: row['Delivery'] ? String(row['Delivery']) : null,
       };
     }).filter(r => r.tanum && r.tanum !== 'undefined');
 
@@ -207,9 +211,10 @@ export default function UploadPage() {
 
           const filename = file.name.toUpperCase();
 
-          // Create batch in Supabase
+          // Create batch in Supabase (only for LTAP, VEKP, VEPO – LIKP has separate handling)
           let batchId: string | null = null;
-          if (saveToDb) {
+          const isLikp = filename.includes("LIKP");
+          if (saveToDb && !isLikp) {
             try {
               const fileHash = await hashFile(file);
               const sourceType = filename.includes("LTAP") ? "LTAP" : filename.includes("VEKP") ? "VEKP" : "VEPO";
@@ -237,6 +242,10 @@ export default function UploadPage() {
                 row['Confirmation date_1'] || row['Confirmation date'],
                 row['Confirmation time_1'] || row['Confirmation time']
               ),
+              queue: String(row['Queue'] || row['Source Storage Type'] || ''),
+              delivery: String(row['Delivery'] || row['Requirement Tracking Number'] || ''),
+              material: String(row['Material'] || ''),
+              source_storage_bin: String(row['Source Storage Bin'] || ''),
             })).filter(r => r.to_number && r.to_number !== "undefined");
 
             addPickingData(parsedData);
@@ -254,6 +263,8 @@ export default function UploadPage() {
               return {
                 internal_hu: String(row['Internal HU number']),
                 hu_number: String(row['Handling Unit']),
+                packaging_material: String(row['Packaging Material'] || ''),
+                delivery: String(row['Delivery'] || ''),
                 operator: String(row['Created By'] || ''), // sloupec Q
                 quantity: 0,
                 weight: Number(row['Allowed Weight']) || Number(row['Total Weight']) || 0,
@@ -280,8 +291,30 @@ export default function UploadPage() {
             if (saveToDb && batchId) {
               dbRows = await saveVepoToSupabase(json, batchId);
             }
+          } else if (filename.includes("LIKP")) {
+            importType = "DELIVERIES";
+            parsedData = json.map(row => ({
+              delivery: String(row['Delivery'] || row['Lieferung'] || row['Dodávka'] || row['Zakázka'] || ''),
+              shipping_point: String(row['Shipping Point'] || row['Shipping point/receiving pt'] || row['Versandstelle'] || row['Místo přijetí/odesl.'] || ''),
+            })).filter(r => r.delivery && r.delivery !== "undefined");
+
+            addLikpData(parsedData);
+
+            // Uložit LIKP do Supabase
+            if (saveToDb) {
+              const likpRows = parsedData.map(r => ({
+                delivery: r.delivery,
+                shipping_point: r.shipping_point,
+              }));
+              for (let i = 0; i < likpRows.length; i += 500) {
+                const batch = likpRows.slice(i, i + 500);
+                const { error } = await supabase.from('likp_deliveries').upsert(batch, { onConflict: 'delivery', ignoreDuplicates: false });
+                if (error) console.error('LIKP insert error:', error.message);
+              }
+            }
+            dbRows = parsedData.length;
           } else {
-            return resolve({ name: file.name, status: "error", message: "Neznámý typ reportu. Název musí obsahovat LTAP, VEKP nebo VEPO." });
+            return resolve({ name: file.name, status: "error", message: "Neznámý typ reportu. Název musí obsahovat LTAP, VEKP, VEPO nebo LIKP." });
           }
 
           // Update batch status
@@ -368,7 +401,7 @@ export default function UploadPage() {
             </div>
             <h3 className="text-lg font-bold text-white mb-2">Přetáhněte reporty sem</h3>
             <p className="text-sm text-white/40 text-center max-w-sm">
-              Podporované soubory: LTAP (Picking), VEKP (Packing hlavičky), VEPO (Packing položky) ve formátu .xlsx nebo .csv
+              Podporované soubory: LTAP (Picking), VEKP (Packing hlavičky), VEPO (Packing položky), LIKP (Dodávky) ve formátu .xlsx nebo .csv
             </p>
             {saveToDb && (
               <p className="text-xs text-emerald-400/60 mt-3 flex items-center gap-1">
