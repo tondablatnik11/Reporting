@@ -13,6 +13,7 @@ RETURNS TEXT LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 -- 2. Daily Summary (Základní denní výkon a mix)
+DROP FUNCTION IF EXISTS get_daily_summary();
 CREATE OR REPLACE FUNCTION get_daily_summary()
 RETURNS TABLE (
     report_date DATE,
