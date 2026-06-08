@@ -126,15 +126,12 @@ async function fetchCategoriesMap(deliveries: string[]): Promise<Record<string, 
     const chunk = uniqueDels.slice(i, i + chunkSize);
     const { data, error } = await supabase
       .from("likp_deliveries")
-      .select("delivery, shipping_point")
+      .select("delivery, category")
       .in("delivery", chunk);
       
     if (!error && data) {
       data.forEach(d => {
-        let cat = "Normal";
-        if (d.shipping_point === "FM21" || d.shipping_point === "FM22") cat = "Express";
-        else if (d.shipping_point === "FM24") cat = "OE";
-        catMap[d.delivery] = cat;
+        catMap[d.delivery] = d.category || "Normal";
       });
     }
   }

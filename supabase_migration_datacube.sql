@@ -23,7 +23,10 @@ RETURNS TABLE (
     pack_qty NUMERIC,
     normal_tos BIGINT,
     express_tos BIGINT,
-    oe_tos BIGINT
+    oe_tos BIGINT,
+    normal_hus BIGINT,
+    express_hus BIGINT,
+    oe_hus BIGINT
 ) LANGUAGE plpgsql AS $$
 BEGIN
     RETURN QUERY
@@ -44,9 +47,13 @@ BEGIN
         SELECT 
             DATE(vh.packed_at) as d,
             COUNT(DISTINCT vh.internal_hu_number) as hus,
-            COALESCE(SUM(vi.packed_quantity), 0) as qty
+            COALESCE(SUM(vi.packed_quantity), 0) as qty,
+            COUNT(DISTINCT vh.internal_hu_number) FILTER (WHERE COALESCE(ld.category, 'Normal') = 'Normal') as norm_hus,
+            COUNT(DISTINCT vh.internal_hu_number) FILTER (WHERE ld.category = 'Express') as exp_hus,
+            COUNT(DISTINCT vh.internal_hu_number) FILTER (WHERE ld.category = 'OE') as o_hus
         FROM vekp_packing_headers vh
         LEFT JOIN vepo_packing_items vi ON vh.internal_hu_number = vi.internal_hu_number
+        LEFT JOIN likp_deliveries ld ON vh.delivery = ld.delivery
         WHERE vh.packed_at IS NOT NULL
         GROUP BY DATE(vh.packed_at)
     )
@@ -59,7 +66,10 @@ BEGIN
         COALESCE(pkd.qty, 0) as pack_qty,
         COALESCE(pd.norm_tos, 0) as normal_tos,
         COALESCE(pd.exp_tos, 0) as express_tos,
-        COALESCE(pd.o_tos, 0) as oe_tos
+        COALESCE(pd.o_tos, 0) as oe_tos,
+        COALESCE(pkd.norm_hus, 0) as normal_hus,
+        COALESCE(pkd.exp_hus, 0) as express_hus,
+        COALESCE(pkd.o_hus, 0) as oe_hus
     FROM pick_daily pd
     FULL OUTER JOIN pack_daily pkd ON pd.d = pkd.d
     ORDER BY report_date DESC;

@@ -152,7 +152,8 @@ export async function POST(req: NextRequest) {
         }
 
         const operator = String(row['User_1'] || row['User'] || '');
-        const delivery = String(row['Delivery'] || row['Requirement Tracking Number'] || '');
+        const deliveryRaw = String(row['Delivery'] || row['Requirement Tracking Number'] || '');
+        const delivery = deliveryRaw.replace(/^0+/, '');
         const tanum = String(row['Transfer Order Number'] || '');
         
         if (!operator) missingOperatorCount++;
@@ -221,7 +222,8 @@ export async function POST(req: NextRequest) {
 
         const internal_hu = String(row['Internal HU number'] || '');
         const operator = String(row['Created By'] || '');
-        const delivery = String(row['Delivery'] || '');
+        const deliveryRaw = String(row['Delivery'] || '');
+        const delivery = deliveryRaw.replace(/^0+/, '');
 
         if (!operator) missingOperatorCount++;
         if (!delivery) missingDeliveryCount++;
@@ -272,7 +274,8 @@ export async function POST(req: NextRequest) {
 
       for (const row of json) {
         const internal_hu = String(row['Internal HU number'] || '');
-        const delivery = String(row['Delivery'] || '');
+        const deliveryRaw = String(row['Delivery'] || '');
+        const delivery = deliveryRaw.replace(/^0+/, '');
         
         if (!delivery) missingDeliveryCount++;
 
@@ -334,7 +337,8 @@ export async function POST(req: NextRequest) {
                  kl.includes('dopravce');
         });
 
-        const delivery = String((delKey ? row[delKey] : row['Delivery']) || '');
+        const deliveryRaw = String((delKey ? row[delKey] : row['Delivery']) || '');
+        const delivery = deliveryRaw.replace(/^0+/, '');
         if (delivery && delivery !== "undefined") {
           const shipping_point = String((shipKey ? row[shipKey] : row['Shipping Point']) || '');
           const carrier = String((carrierKey ? row[carrierKey] : row['Special proc. indicator']) || '');
