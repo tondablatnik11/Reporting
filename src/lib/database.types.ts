@@ -16,8 +16,19 @@ export interface Database {
           updated_at: string | null
           updated_by: string | null
         }
-        Insert: Partial<Database['public']['Tables']['app_settings']['Row']>
-        Update: Partial<Database['public']['Tables']['app_settings']['Row']>
+        Insert: {
+          key: string
+          value: Json
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          key?: string
+          value?: Json
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: []
       }
       ltap_picking: {
         Row: {
@@ -60,8 +71,9 @@ export interface Database {
           secondary_confirmed_at: string | null
           created_at: string | null
         }
-        Insert: Partial<Database['public']['Tables']['ltap_picking']['Row']>
-        Update: Partial<Database['public']['Tables']['ltap_picking']['Row']>
+        Insert: { [key: string]: any }
+        Update: { [key: string]: any }
+        Relationships: []
       }
       vekp_packing_headers: {
         Row: {
@@ -88,37 +100,44 @@ export interface Database {
           movement_status: string | null
           row_created_at: string | null
         }
-        Insert: Partial<Database['public']['Tables']['vekp_packing_headers']['Row']>
-        Update: Partial<Database['public']['Tables']['vekp_packing_headers']['Row']>
+        Insert: { [key: string]: any }
+        Update: { [key: string]: any }
+        Relationships: []
       }
+      import_batches: { Row: Record<string, any>, Insert: Record<string, any>, Update: Record<string, any>, Relationships: [] }
+      vepo_packing_items: { Row: Record<string, any>, Insert: Record<string, any>, Update: Record<string, any>, Relationships: [] }
+      likp_deliveries: { Row: Record<string, any>, Insert: Record<string, any>, Update: Record<string, any>, Relationships: [] }
+      differences: { Row: Record<string, any>, Insert: Record<string, any>, Update: Record<string, any>, Relationships: [] }
+      storage_inventory: { Row: Record<string, any>, Insert: Record<string, any>, Update: Record<string, any>, Relationships: [] }
+      storage_history: { Row: Record<string, any>, Insert: Record<string, any>, Update: Record<string, any>, Relationships: [] }
+      material_catalog: { Row: Record<string, any>, Insert: Record<string, any>, Update: Record<string, any>, Relationships: [] }
     }
     Functions: {
       get_delivery_detail: {
-        Args: {
-          p_search_term: string
-        }
+        Args: Record<string, any>
         Returns: any
       }
       get_pick_material_stats: {
-        Args: {
-          p_start_date: string
-          p_end_date: string
-          p_shift: string | null
-        }
+        Args: Record<string, any>
         Returns: any
       }
       get_pack_material_stats: {
-        Args: {
-          p_start_date: string
-          p_end_date: string
-          p_shift: string | null
-        }
+        Args: Record<string, any>
         Returns: any
       }
       get_daily_history: {
-        Args: Record<string, never>
+        Args: Record<string, any>
         Returns: any
       }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }
