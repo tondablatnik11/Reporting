@@ -1,62 +1,32 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, PackageSearch, Box, BarChart3, Users, Download, Loader2 } from "lucide-react";
-import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { useData } from "@/lib/data-context";
-import { usePeriodData, aggregateToChartData, getPreviousPeriodRange, type Period } from "@/lib/use-period-data";
-import PeriodSelector from "@/components/ui/PeriodSelector";
-import EmployeePerformance from "@/components/analytics/EmployeePerformance";
-import PdfReportTemplate from "@/components/analytics/PdfReportTemplate";
+import { useEffect, useState } from "react";
+import { ArrowUpRight, ArrowDownRight, PackageSearch, Box, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export default function DashboardPage() {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const [period, setPeriod] = useState<Period>("day");
-  const [dateValue, setDateValue] = useState<string>(todayStr);
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, previousPickingData, previousPackingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue);
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
-  
-  let totalPicking = 0;
-  let totalPacking = 0;
-  const globalPickingTOs = new Set();
-  const globalPackingHUs = new Set();
-
-  pickingData.forEach(p => {
-    totalPicking += p.quantity;
-    globalPickingTOs.add(`${p.to_number}-${p.to_item || '0'}`);
-  });
-  packingData.forEach(p => {
-    if (p.created_at) {
-      totalPacking += (p.quantity || 0);
-      if (p.hu_number) globalPackingHUs.add(p.internal_hu);
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: summaryData, error: summaryError } = await supabase.rpc('get_daily_summary');
+      if (summaryError) throw summaryError;
+      setData(summaryData || []);
+    } catch (err: any) {
+      console.error("Dashboard fetch error:", err);
+      setError(err.message || "Nepodařilo se načíst data z databáze.");
+    } finally {
+      setLoading(false);
     }
-  });
-
-  const totalPickingTOs = globalPickingTOs.size;
-  const totalPackingHUs = globalPackingHUs.size;
-
-  // Previous period calculations
-  let prevTotalPicking = 0;
-  let prevTotalPacking = 0;
-  const prevGlobalPickingTOs = new Set();
-  const prevGlobalPackingHUs = new Set();
-
-  previousPickingData.forEach(p => {
-    prevTotalPicking += p.quantity;
-    prevGlobalPickingTOs.add(`${p.to_number}-${p.to_item || '0'}`);
-  });
-  previousPackingData.forEach(p => {
-    if (p.created_at) {
-      prevTotalPacking += (p.quantity || 0);
-      if (p.hu_number) prevGlobalPackingHUs.add(p.internal_hu);
-    }
-  });
-
-  const prevTotalPickingTOs = prevGlobalPickingTOs.size;
-  const prevTotalPackingHUs = prevGlobalPackingHUs.size;
+  };
 
   const calculateTrend = (current: number, previous: number) => {
     if (previous === 0 && current === 0) return { percent: 0, isPositive: true, text: "Beze změny" };
@@ -70,127 +40,85 @@ export default function DashboardPage() {
     };
   };
 
-  const trendText = period === "day" ? "oproti včerejšku" : period === "week" ? "oproti minulému týdnu" : period === "month" ? "oproti minulému měsíci" : "";
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
 
-  const pickTrend = calculateTrend(totalPickingTOs, prevTotalPickingTOs);
-  const packTrend = calculateTrend(totalPackingHUs, prevTotalPackingHUs);
-  const avgKsPerTO = totalPickingTOs > 0 ? Math.round(totalPicking / totalPickingTOs) : 0;
-  const avgTrend = calculateTrend(avgKsPerTO, prevTotalPickingTOs > 0 ? Math.round(prevTotalPicking / prevTotalPickingTOs) : 0);
+  if (error) {
+    return (
+      <div className="glass-panel p-8 text-center space-y-4">
+        <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
+        <h2 className="text-xl font-bold text-white">Chyba při načítání dat</h2>
+        <p className="text-white/60">{error}</p>
+        <p className="text-sm text-amber-400">Ujisti se, že jsi spustil migrační skript `supabase_migration_datacube.sql` v Supabase.</p>
+        <button onClick={loadData} className="glass-button-primary mt-4">Zkusit znovu</button>
+      </div>
+    );
+  }
 
-  const [isExporting, setIsExporting] = useState(false);
+  if (data.length === 0) {
+    return (
+      <div className="glass-panel p-8 text-center space-y-4">
+        <Box className="w-12 h-12 text-white/20 mx-auto" />
+        <h2 className="text-xl font-bold text-white">Žádná data</h2>
+        <p className="text-white/60">V databázi zatím nejsou žádná zpracovaná data. Nahraj nejprve Excel reporty v záložce Import.</p>
+      </div>
+    );
+  }
 
-  const exportPDF = async () => {
-    setIsExporting(true);
-    try {
-      const { toJpeg } = await import('html-to-image');
-      const { jsPDF } = await import('jspdf');
-      
-      const container = document.getElementById('pdf-export-template');
-      if (!container) return;
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      const margin = 10;
-      const usableWidth = pdfWidth - (margin * 2);
+  // Nejdřív nejnovější den (yesterday = poslední den s daty)
+  const yesterday = data[0];
+  const dayBefore = data.length > 1 ? data[1] : null;
 
-      // Get Header and all inner sections
-      const header = container.firstElementChild as HTMLElement;
-      const contentWrapper = container.lastElementChild as HTMLElement;
-      const sections = [header, ...Array.from(contentWrapper.children)] as HTMLElement[];
-      
-      let yOffset = margin;
+  const pickTrend = dayBefore ? calculateTrend(yesterday.pick_tos, dayBefore.pick_tos) : { percent: 0, isPositive: true, text: "-" };
+  const packTrend = dayBefore ? calculateTrend(yesterday.pack_hus, dayBefore.pack_hus) : { percent: 0, isPositive: true, text: "-" };
 
-      for (const section of sections) {
-        if (!section || section.offsetHeight === 0) continue;
-        
-        const imgData = await toJpeg(section, { quality: 1.0, backgroundColor: '#030507', pixelRatio: 2 });
-        const imgProps = pdf.getImageProperties(imgData);
-        const imgHeight = (imgProps.height * usableWidth) / imgProps.width;
+  const totalOrders = yesterday.normal_tos + yesterday.express_tos + yesterday.oe_tos;
+  const expressPct = totalOrders > 0 ? Math.round((yesterday.express_tos / totalOrders) * 100) : 0;
+  const normalPct = totalOrders > 0 ? Math.round((yesterday.normal_tos / totalOrders) * 100) : 0;
 
-        if (yOffset + imgHeight > pdfHeight - margin) {
-          pdf.addPage();
-          yOffset = margin;
-        }
-
-        pdf.addImage(imgData, 'JPEG', margin, yOffset, usableWidth, imgHeight);
-        yOffset += imgHeight + 8; // small gap
-      }
-      
-      pdf.save(`Hellmann_Report_${dateValue || todayStr}.pdf`);
-    } catch (error) {
-      console.error("PDF Export failed", error);
-      alert("Došlo k chybě při generování PDF.");
-    } finally {
-      setIsExporting(false);
-    }
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' });
   };
-
-  const { uniquePickerCount, uniquePackerCount, topPickers, topPackers } = useMemo(() => {
-    const pickerSet = new Set<string>();
-    const packerSet = new Set<string>();
-    const pickerTOs = new Map<string, number>();
-    const packerHUs = new Map<string, number>();
-
-    pickingData.forEach(r => {
-      if (r.operator && r.quantity > 0) {
-        pickerSet.add(r.operator);
-        pickerTOs.set(r.operator, (pickerTOs.get(r.operator) || 0) + 1);
-      }
-    });
-
-    packingData.forEach(r => {
-      if (r.operator && r.hu_number) {
-        packerSet.add(r.operator);
-        packerHUs.set(r.operator, (packerHUs.get(r.operator) || 0) + 1);
-      }
-    });
-
-    const sortedPickers = Array.from(pickerTOs.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    const sortedPackers = Array.from(packerHUs.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-    return {
-      uniquePickerCount: pickerSet.size,
-      uniquePackerCount: packerSet.size,
-      topPickers: sortedPickers,
-      topPackers: sortedPackers,
-    };
-  }, [pickingData, packingData]);
-
-  const totalOperators = new Set([
-    ...pickingData.filter(r => r.operator).map(r => r.operator),
-    ...packingData.filter(r => r.operator).map(r => r.operator!)
-  ]).size;
 
   return (
     <div className="space-y-6 animate-fade-in-up">
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-wide">Celkový Přehled Výkonu</h1>
-          <p className="text-white/40 text-sm mt-1">Souhrn operací na skladu pro zvolené období</p>
+          <h1 className="text-2xl font-bold text-white tracking-wide">Ranní Manažerský Report</h1>
+          <p className="text-white/40 text-sm mt-1">Shrnutí výsledků za {formatDate(yesterday.report_date)}</p>
         </div>
-        <div className="flex items-center gap-4">
-          {period !== "all" && (
-            <button 
-              onClick={exportPDF} 
-              disabled={isExporting || loading}
-              className="glass-button-primary text-sm flex items-center gap-2"
-            >
-              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              {isExporting ? "Generuji PDF..." : "Exportovat PDF"}
-            </button>
+        <button onClick={loadData} className="glass-button-primary text-sm flex items-center gap-2">
+          <RefreshCw className="w-4 h-4" /> Aktualizovat data
+        </button>
+      </div>
+
+      {/* MORNING BRIEF TEXT */}
+      <div className="glass-panel p-8 border-l-4 border-l-blue-500 relative overflow-hidden group">
+        <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+          <TrendingUp className="w-32 h-32 text-blue-400" />
+        </div>
+        <h2 className="text-sm font-bold text-blue-400 uppercase tracking-widest mb-4">Morning Brief</h2>
+        <div className="relative z-10 text-lg text-white/90 leading-relaxed max-w-4xl space-y-3">
+          <p>
+            Za včerejší den <strong className="text-white">({formatDate(yesterday.report_date)})</strong> jsme úspěšně zpracovali <strong className="text-blue-400">{yesterday.pick_tos.toLocaleString()} TO</strong> (přes {yesterday.pick_qty.toLocaleString()} Ks) na pickingu a zabalili <strong className="text-purple-400">{yesterday.pack_hus.toLocaleString()} HU</strong>.
+          </p>
+          {dayBefore && (
+            <p>
+              V porovnání s předchozím dnem je picking <strong className={pickTrend.isPositive ? "text-emerald-400" : "text-red-400"}>{pickTrend.text}</strong> a packing <strong className={packTrend.isPositive ? "text-emerald-400" : "text-red-400"}>{packTrend.text}</strong>.
+            </p>
           )}
-          <PeriodSelector 
-            period={period} 
-            onChangePeriod={setPeriod} 
-            dateValue={dateValue}
-            onChangeDate={setDateValue}
-            loading={loading}
-          />
+          <p>
+            Struktura zakázek byla z <strong className="text-white">{normalPct}% Normal</strong> a <strong className="text-amber-400">{expressPct}% Express</strong>. Do kategorie OE spadalo celkem {yesterday.oe_tos.toLocaleString()} TO.
+          </p>
         </div>
       </div>
 
-      <div id="report-container" className="space-y-6">
+      {/* METRIKY */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="glass-panel p-6 relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -198,17 +126,17 @@ export default function DashboardPage() {
           </div>
           <div className="relative z-10 flex flex-col justify-between h-full">
             <div>
-              <div className="text-3xl font-black text-white tracking-tight">{totalPickingTOs.toLocaleString()}</div>
-              <div className="text-sm font-bold text-blue-400 mt-1">{totalPicking.toLocaleString()} Ks</div>
+              <div className="text-3xl font-black text-white tracking-tight">{yesterday.pick_tos.toLocaleString()}</div>
+              <div className="text-sm font-bold text-blue-400 mt-1">{yesterday.pick_qty.toLocaleString()} Ks</div>
               <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Vypickované TO</div>
             </div>
-            {period !== "all" && (
+            {dayBefore && (
               <div className="mt-4 flex items-center gap-1.5">
                 <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${pickTrend.isPositive ? 'trend-up' : 'trend-down'}`}>
                   {pickTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                   {pickTrend.text}
                 </div>
-                <span className="text-[10px] text-white/30 uppercase tracking-wider">{trendText}</span>
+                <span className="text-[10px] text-white/30 uppercase tracking-wider">Oproti {formatDate(dayBefore.report_date)}</span>
               </div>
             )}
           </div>
@@ -220,143 +148,59 @@ export default function DashboardPage() {
           </div>
           <div className="relative z-10 flex flex-col justify-between h-full">
             <div>
-              <div className="text-3xl font-black text-white tracking-tight">{totalPackingHUs.toLocaleString()}</div>
-              <div className="text-sm font-bold text-purple-400 mt-1">{totalPacking.toLocaleString()} Ks</div>
+              <div className="text-3xl font-black text-white tracking-tight">{yesterday.pack_hus.toLocaleString()}</div>
+              <div className="text-sm font-bold text-purple-400 mt-1">{yesterday.pack_qty.toLocaleString()} Ks</div>
               <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Zabalené HU</div>
             </div>
-            {period !== "all" && (
+            {dayBefore && (
               <div className="mt-4 flex items-center gap-1.5">
                 <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${packTrend.isPositive ? 'trend-up' : 'trend-down'}`}>
                   {packTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                   {packTrend.text}
                 </div>
-                <span className="text-[10px] text-white/30 uppercase tracking-wider">{trendText}</span>
+                <span className="text-[10px] text-white/30 uppercase tracking-wider">Oproti {formatDate(dayBefore.report_date)}</span>
               </div>
             )}
           </div>
         </div>
 
-        <div className="glass-panel p-6 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <BarChart3 className="w-20 h-20 text-emerald-400" />
-          </div>
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div>
-              <div className="text-3xl font-black text-white tracking-tight">{avgKsPerTO}</div>
-              <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Průměr Ks / TO</div>
-            </div>
-            {period !== "all" && (
-              <div className="mt-4 flex items-center gap-1.5">
-                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${avgTrend.isPositive ? 'trend-up' : 'trend-down'}`}>
-                  {avgTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                  {avgTrend.text}
-                </div>
-                <span className="text-[10px] text-white/30 uppercase tracking-wider">{trendText}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="glass-panel p-6 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Users className="w-20 h-20 text-amber-400" />
-          </div>
+        <div className="glass-panel p-6 col-span-1 lg:col-span-2 relative overflow-hidden group">
           <div className="relative z-10">
-            <div className="text-3xl font-black text-white tracking-tight">{totalOperators}</div>
-            <div className="text-sm text-white/40 mt-1">{uniquePickerCount} pickerů · {uniquePackerCount} packerů</div>
-            <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Aktivní Operátoři</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="glass-panel p-6 col-span-2 flex flex-col">
-          <h3 className="text-lg font-bold text-white mb-5">Vývoj produktivity</h3>
-          <div className="flex-1 w-full min-h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="dashColorPick" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6391ff" stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor="#6391ff" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="dashColorPack" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#b18cff" stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor="#b18cff" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} label={{ value: "TO / HU", angle: -90, position: "insideLeft", style: { fill: "rgba(255,255,255,0.3)", fontSize: 10 } }} />
-                <Tooltip contentStyle={{ backgroundColor: 'rgba(10,14,30,0.95)', borderColor: 'rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '13px' }} itemStyle={{ color: '#fff' }} />
-                <Legend wrapperStyle={{ paddingTop: '12px', fontSize: '12px' }} />
-                <Area yAxisId="left" type="monotone" dataKey="pickingTOs" name="Picking (TO)" stroke="#6391ff" strokeWidth={2.5} fillOpacity={1} fill="url(#dashColorPick)" />
-                <Area yAxisId="left" type="monotone" dataKey="packingHUs" name="Packing (HU)" stroke="#b18cff" strokeWidth={2.5} fillOpacity={1} fill="url(#dashColorPack)" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="space-y-5">
-          <div className="glass-panel p-5">
-            <h4 className="text-xs font-bold text-white/40 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <PackageSearch className="w-3.5 h-3.5 text-blue-400" /> Top Pickeři (TO)
-            </h4>
-            <div className="space-y-2.5">
-              {topPickers.length === 0 ? (
-                <p className="text-sm text-white/30 text-center py-2">Žádná data</p>
-              ) : topPickers.map(([name, tos], idx) => (
-                <div key={name} className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-sm shrink-0">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx+1}.`}</span>
-                    <span className="text-sm font-medium text-white/80 truncate">{name}</span>
-                  </div>
-                  <span className="text-sm font-bold text-blue-400 shrink-0">{tos}</span>
+            <h3 className="text-sm font-bold text-white/50 uppercase tracking-wider mb-4">Kategorie zakázek (Picking)</h3>
+            <div className="space-y-4">
+              
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-white/70">Normal</span>
+                  <span className="font-bold text-white">{yesterday.normal_tos.toLocaleString()} TO ({normalPct}%)</span>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="glass-panel p-5">
-            <h4 className="text-xs font-bold text-white/40 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Box className="w-3.5 h-3.5 text-purple-400" /> Top Packeři (HU)
-            </h4>
-            <div className="space-y-2.5">
-              {topPackers.length === 0 ? (
-                <p className="text-sm text-white/30 text-center py-2">Žádná data</p>
-              ) : topPackers.map(([name, hus], idx) => (
-                <div key={name} className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-sm shrink-0">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx+1}.`}</span>
-                    <span className="text-sm font-medium text-white/80 truncate">{name}</span>
-                  </div>
-                  <span className="text-sm font-bold text-purple-400 shrink-0">{hus}</span>
+                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${normalPct}%` }}></div>
                 </div>
-              ))}
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-white/70">Express</span>
+                  <span className="font-bold text-amber-400">{yesterday.express_tos.toLocaleString()} TO ({expressPct}%)</span>
+                </div>
+                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-400 rounded-full" style={{ width: `${expressPct}%` }}></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-white/70">OE</span>
+                  <span className="font-bold text-purple-400">{yesterday.oe_tos.toLocaleString()} TO</span>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
       </div>
 
-      </div>
-
-      <EmployeePerformance 
-        filterType="all" 
-        pickingData={pickingData} 
-        packingData={packingData} 
-        loading={loading} 
-      />
-      
-      {/* Skrytá šablona pro generování PDF */}
-      <div className="absolute left-[-9999px] top-0 opacity-0 pointer-events-none overflow-visible">
-        <PdfReportTemplate 
-          pickingData={pickingData}
-          packingData={packingData}
-          chartData={chartData}
-          period={period}
-          dateValue={dateValue}
-        />
-      </div>
     </div>
   );
 }
