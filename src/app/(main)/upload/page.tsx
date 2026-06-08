@@ -7,7 +7,6 @@ import { useData } from "@/lib/data-context";
 import { supabase } from "@/lib/supabase";
 import EmployeePerformance from "@/components/analytics/EmployeePerformance";
 
-// Simple hash for file dedup
 async function hashFile(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', buffer);
@@ -37,22 +36,19 @@ export default function UploadPage() {
     let day = new Date().getDate();
 
     if (typeof excelDate === 'number') {
-      // Excel serial date
       const utcDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
       year = utcDate.getUTCFullYear();
       month = utcDate.getUTCMonth();
       day = utcDate.getUTCDate();
     } else if (typeof excelDate === 'string') {
       if (excelDate.includes('/')) {
-        // MM/DD/YYYY format (VEKP, LTAP export)
         const parts = excelDate.split('/');
         if (parts.length >= 3) {
-          month = parseInt(parts[0], 10) - 1; // MM
-          day = parseInt(parts[1], 10);        // DD
-          year = parseInt(parts[2].substring(0, 4), 10); // YYYY
+          month = parseInt(parts[0], 10) - 1;
+          day = parseInt(parts[1], 10);
+          year = parseInt(parts[2].substring(0, 4), 10);
         }
       } else if (excelDate.includes('.')) {
-        // DD.MM.YYYY format
         const parts = excelDate.split('.');
         if (parts.length >= 3) {
           day = parseInt(parts[0], 10);
@@ -60,7 +56,6 @@ export default function UploadPage() {
           year = parseInt(parts[2].substring(0, 4), 10);
         }
       } else if (excelDate.includes('-')) {
-        // YYYY-MM-DD (ISO)
         const parts = excelDate.split('-');
         if (parts.length >= 3) {
           year = parseInt(parts[0], 10);
@@ -93,7 +88,6 @@ export default function UploadPage() {
     return new Date(year, month, day, hours, minutes, seconds);
   };
 
-  // Save LTAP data to Supabase
   const saveLtapToSupabase = async (json: any[], batchId: string) => {
     const rows = json.map(row => {
       const confirmedAt = parseExcelDateTime(
@@ -128,7 +122,6 @@ export default function UploadPage() {
     return rows.length;
   };
 
-  // Save VEKP data to Supabase
   const saveVekpToSupabase = async (json: any[], batchId: string) => {
     const rows = json.map(row => {
       const createdAt = parseExcelDateTime(row['Created On'], row['Time']);
@@ -156,7 +149,6 @@ export default function UploadPage() {
     return rows.length;
   };
 
-  // Save VEPO data to Supabase
   const saveVepoToSupabase = async (json: any[], batchId: string) => {
     const rows = json.map(row => ({
       batch_id: batchId,
@@ -291,13 +283,11 @@ export default function UploadPage() {
             parsedData = json.map(row => {
               const keys = Object.keys(row);
               
-              // Dynamické vyhledání sloupce Delivery
               const delKey = keys.find(k => {
                 const kl = k.toLowerCase().trim();
                 return kl === 'delivery' || kl === 'lieferung' || kl === 'dodávka' || kl === 'zakázka';
               });
               
-              // Dynamické vyhledání sloupce Shipping Point (ignoruje přesnou diakritiku, mezery a tečky)
               const shipKey = keys.find(k => {
                 const kl = k.toLowerCase().trim();
                 return kl.includes('shipping point') || 
@@ -306,9 +296,18 @@ export default function UploadPage() {
                        kl.includes('místo přijetí');
               });
 
+              // Dynamické vyhledání sloupce Dopravce (Special proc. indicator)
+              const carrierKey = keys.find(k => {
+                const kl = k.toLowerCase().trim();
+                return kl.includes('special proc') || 
+                       kl.includes('indicator') || 
+                       kl.includes('dopravce');
+              });
+
               return {
                 delivery: String((delKey ? row[delKey] : row['Delivery']) || ''),
                 shipping_point: String((shipKey ? row[shipKey] : row['Shipping Point']) || ''),
+                carrier: String((carrierKey ? row[carrierKey] : row['Special proc. indicator']) || ''),
               };
             }).filter(r => r.delivery && r.delivery !== "undefined" && r.delivery !== "");
 
@@ -318,6 +317,7 @@ export default function UploadPage() {
               const likpRows = parsedData.map(r => ({
                 delivery: r.delivery,
                 shipping_point: r.shipping_point,
+                carrier: r.carrier, // Vložení do DB
               }));
               for (let i = 0; i < likpRows.length; i += 500) {
                 const batch = likpRows.slice(i, i + 500);
