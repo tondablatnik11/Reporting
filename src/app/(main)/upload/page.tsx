@@ -96,7 +96,6 @@ export default function UploadPage() {
   // Save LTAP data to Supabase
   const saveLtapToSupabase = async (json: any[], batchId: string) => {
     const rows = json.map(row => {
-      // AJ = 'Confirmation date_1' (MM/DD/YYYY), AK = 'Confirmation time_1'
       const confirmedAt = parseExcelDateTime(
         row['Confirmation date_1'] || row['Confirmation date'],
         row['Confirmation time_1'] || row['Confirmation time']
@@ -121,7 +120,6 @@ export default function UploadPage() {
       };
     }).filter(r => r.tanum && r.tanum !== 'undefined');
 
-    // Insert in batches of 500
     for (let i = 0; i < rows.length; i += 500) {
       const batch = rows.slice(i, i + 500);
       const { error } = await supabase.from('ltap_picking').upsert(batch, { onConflict: 'tanum,tapos', ignoreDuplicates: true });
@@ -133,7 +131,6 @@ export default function UploadPage() {
   // Save VEKP data to Supabase
   const saveVekpToSupabase = async (json: any[], batchId: string) => {
     const rows = json.map(row => {
-      // R = 'Created On' (MM/DD/YYYY), S = 'Time'
       const createdAt = parseExcelDateTime(row['Created On'], row['Time']);
       createdAt.setHours(createdAt.getHours() + 2); // VEKP +2h
       return {
@@ -179,7 +176,6 @@ export default function UploadPage() {
     return rows.length;
   };
 
-  // Create import batch record
   const createBatch = async (file: File, sourceType: string, fileHash: string) => {
     const { data, error } = await supabase.from('import_batches').insert([{
       source_type: sourceType,
@@ -211,9 +207,9 @@ export default function UploadPage() {
 
           const filename = file.name.toUpperCase();
 
-          // Create batch in Supabase (only for LTAP, VEKP, VEPO – LIKP has separate handling)
           let batchId: string | null = null;
           const isLikp = filename.includes("LIKP");
+          
           if (saveToDb && !isLikp) {
             try {
               const fileHash = await hashFile(file);
@@ -237,7 +233,6 @@ export default function UploadPage() {
               operator: String(row['User_1'] || row['User']),
               quantity: Number(row['Dest.target quantity']) || 0,
               weight: Number(row['Weight']) || 0,
-              // AJ = Confirmation date_1 (MM/DD/YYYY), AK = Confirmation time_1
               confirmed_at: parseExcelDateTime(
                 row['Confirmation date_1'] || row['Confirmation date'],
                 row['Confirmation time_1'] || row['Confirmation time']
@@ -257,7 +252,6 @@ export default function UploadPage() {
           } else if (filename.includes("VEKP")) {
             importType = "PACKING_HEADERS";
             parsedData = json.map(row => {
-              // R = 'Created On' (MM/DD/YYYY), S = 'Time'
               const dt = parseExcelDateTime(row['Created On'], row['Time']);
               dt.setHours(dt.getHours() + 2); // VEKP +2h
               return {
@@ -265,7 +259,7 @@ export default function UploadPage() {
                 hu_number: String(row['Handling Unit']),
                 packaging_material: String(row['Packaging Material'] || ''),
                 delivery: String(row['Delivery'] || ''),
-                operator: String(row['Created By'] || ''), // sloupec Q
+                operator: String(row['Created By'] || ''),
                 quantity: 0,
                 weight: Number(row['Allowed Weight']) || Number(row['Total Weight']) || 0,
                 created_at: dt,
@@ -293,14 +287,33 @@ export default function UploadPage() {
             }
           } else if (filename.includes("LIKP")) {
             importType = "DELIVERIES";
-            parsedData = json.map(row => ({
-              delivery: String(row['Delivery'] || row['Lieferung'] || row['Dodávka'] || row['Zakázka'] || ''),
-              shipping_point: String(row['Shipping Point'] || row['Shipping point/receiving pt'] || row['Versandstelle'] || row['Místo přijetí/odesl.'] || ''),
-            })).filter(r => r.delivery && r.delivery !== "undefined");
+            
+            parsedData = json.map(row => {
+              const keys = Object.keys(row);
+              
+              // Dynamické vyhledání sloupce Delivery
+              const delKey = keys.find(k => {
+                const kl = k.toLowerCase().trim();
+                return kl === 'delivery' || kl === 'lieferung' || kl === 'dodávka' || kl === 'zakázka';
+              });
+              
+              // Dynamické vyhledání sloupce Shipping Point (ignoruje přesnou diakritiku, mezery a tečky)
+              const shipKey = keys.find(k => {
+                const kl = k.toLowerCase().trim();
+                return kl.includes('shipping point') || 
+                       kl.includes('ship.pt') || 
+                       kl.includes('versandstelle') || 
+                       kl.includes('místo přijetí');
+              });
+
+              return {
+                delivery: String((delKey ? row[delKey] : row['Delivery']) || ''),
+                shipping_point: String((shipKey ? row[shipKey] : row['Shipping Point']) || ''),
+              };
+            }).filter(r => r.delivery && r.delivery !== "undefined" && r.delivery !== "");
 
             addLikpData(parsedData);
 
-            // Uložit LIKP do Supabase
             if (saveToDb) {
               const likpRows = parsedData.map(r => ({
                 delivery: r.delivery,
@@ -317,7 +330,6 @@ export default function UploadPage() {
             return resolve({ name: file.name, status: "error", message: "Neznámý typ reportu. Název musí obsahovat LTAP, VEKP, VEPO nebo LIKP." });
           }
 
-          // Update batch status
           if (saveToDb && batchId) {
             await supabase.from('import_batches').update({
               status: 'completed',
@@ -326,7 +338,7 @@ export default function UploadPage() {
             }).eq('id', batchId);
           }
 
-          const dbMsg = saveToDb && batchId ? ` · ${dbRows} uloženo do DB` : '';
+          const dbMsg = saveToDb && (batchId || isLikp) ? ` · ${dbRows} uloženo do DB` : '';
           resolve({ name: file.name, status: "success", message: `Zpracováno ${parsedData.length} řádků (${importType})${dbMsg}` });
         } catch (err: any) {
           resolve({ name: file.name, status: "error", message: err.message || "Chyba při parsování" });
