@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { Box, Search, Loader2, Calendar, Filter } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Box, Search, Loader2, Calendar, Filter, TrendingUp, Package, BarChart3 } from "lucide-react";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
 
 type PackStat = {
   packaging_material: string;
   packed_date: string;
   total_hus: number;
 };
+
+const MATERIAL_COLORS = ['#c084fc', '#a855f7', '#7c3aed', '#6d28d9', '#5b21b6', '#4c1d95', '#3b82f6', '#0ea5e9', '#14b8a6', '#10b981'];
 
 export default function PackAnalyticsPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,28 +49,72 @@ export default function PackAnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const groupedByMaterial = stats.reduce((acc, row) => {
-    if (!acc[row.packaging_material]) {
-      acc[row.packaging_material] = {
-        material: row.packaging_material,
-        total_hus: 0,
-        timeline: [] as { date: string, hus: number }[]
-      };
-    }
-    acc[row.packaging_material].total_hus += Number(row.total_hus);
-    acc[row.packaging_material].timeline.push({
-      date: row.packed_date,
-      hus: Number(row.total_hus)
-    });
-    return acc;
-  }, {} as Record<string, { material: string, total_hus: number, timeline: { date: string, hus: number }[] }>);
+  const groupedByMaterial = useMemo(() => {
+    const grouped = stats.reduce((acc, row) => {
+      if (!acc[row.packaging_material]) {
+        acc[row.packaging_material] = {
+          material: row.packaging_material,
+          total_hus: 0,
+          timeline: [] as { date: string, hus: number }[]
+        };
+      }
+      acc[row.packaging_material].total_hus += Number(row.total_hus);
+      acc[row.packaging_material].timeline.push({
+        date: row.packed_date,
+        hus: Number(row.total_hus)
+      });
+      return acc;
+    }, {} as Record<string, { material: string, total_hus: number, timeline: { date: string, hus: number }[] }>);
+    return grouped;
+  }, [stats]);
 
-  const materials = Object.values(groupedByMaterial).sort((a, b) => b.total_hus - a.total_hus);
+  const materials = useMemo(() => Object.values(groupedByMaterial).sort((a, b) => b.total_hus - a.total_hus), [groupedByMaterial]);
+
+  // KPI
+  const kpi = useMemo(() => {
+    const totalMaterials = materials.length;
+    const totalHUs = materials.reduce((s, m) => s + m.total_hus, 0);
+    const topMaterial = materials[0];
+    
+    // Average HU per material
+    const avgHU = totalMaterials > 0 ? Math.round(totalHUs / totalMaterials) : 0;
+    
+    // Trend: compare last 7 days sum vs previous 7 days
+    const allDates = stats.map(s => s.packed_date).sort();
+    const uniqueDates = [...new Set(allDates)].sort();
+    let trendPct = 0;
+    if (uniqueDates.length >= 14) {
+      const recentDates = new Set(uniqueDates.slice(-7));
+      const prevDates = new Set(uniqueDates.slice(-14, -7));
+      const recentHUs = stats.filter(s => recentDates.has(s.packed_date)).reduce((s, r) => s + Number(r.total_hus), 0);
+      const prevHUs = stats.filter(s => prevDates.has(s.packed_date)).reduce((s, r) => s + Number(r.total_hus), 0);
+      trendPct = prevHUs > 0 ? Math.round(((recentHUs - prevHUs) / prevHUs) * 100) : 0;
+    }
+
+    return { totalMaterials, totalHUs, topMaterial, avgHU, trendPct };
+  }, [materials, stats]);
+
+  // Donut chart data
+  const donutData = useMemo(() => {
+    const top5 = materials.slice(0, 5);
+    const rest = materials.slice(5);
+    const restTotal = rest.reduce((s, m) => s + m.total_hus, 0);
+    const data = top5.map((m, i) => ({
+      name: m.material.length > 15 ? m.material.substring(0, 15) + '…' : m.material,
+      value: m.total_hus,
+      fill: MATERIAL_COLORS[i % MATERIAL_COLORS.length]
+    }));
+    if (restTotal > 0) {
+      data.push({ name: 'Ostatní', value: restTotal, fill: '#ffffff15' });
+    }
+    return data;
+  }, [materials]);
 
   const sanitizeId = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '_');
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6 animate-fade-in-up">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -80,6 +126,94 @@ export default function PackAnalyticsPage() {
           </p>
         </div>
       </div>
+
+      {/* KPI karty */}
+      {hasSearched && materials.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="glass-panel p-5 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-3 opacity-5"><Package className="w-16 h-16 text-purple-400" /></div>
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Obalových materiálů</p>
+            <p className="text-3xl font-black text-white">{kpi.totalMaterials}</p>
+          </div>
+          <div className="glass-panel p-5 relative overflow-hidden">
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-1 flex items-center gap-1"><Box className="w-3 h-3" /> Celkem HU</p>
+            <p className="text-3xl font-black text-purple-400">{kpi.totalHUs.toLocaleString()}</p>
+          </div>
+          <div className="glass-panel p-5 relative overflow-hidden">
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Ø HU / materiál</p>
+            <p className="text-3xl font-black text-white/80">{kpi.avgHU.toLocaleString()}</p>
+          </div>
+          <div className={`glass-panel p-5 relative overflow-hidden ${kpi.trendPct > 0 ? 'bg-gradient-to-br from-emerald-500/5 to-transparent' : kpi.trendPct < 0 ? 'bg-gradient-to-br from-rose-500/5 to-transparent' : ''}`}>
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-1 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Trend (7d)</p>
+            <p className={`text-3xl font-black ${kpi.trendPct > 0 ? 'text-emerald-400' : kpi.trendPct < 0 ? 'text-rose-400' : 'text-white/60'}`}>
+              {kpi.trendPct > 0 ? '+' : ''}{kpi.trendPct}%
+            </p>
+            <p className="text-xs text-white/30 mt-1">vs předchozích 7 dnů</p>
+          </div>
+        </div>
+      )}
+
+      {/* Overview: Donut + Top material */}
+      {hasSearched && materials.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="glass-panel p-5 flex flex-col items-center justify-center">
+            <h4 className="text-xs font-bold text-white/40 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" /> Podíl obalů
+            </h4>
+            <div className="h-[160px] w-[160px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={donutData} innerRadius={40} outerRadius={65} paddingAngle={2} dataKey="value" stroke="none">
+                    {donutData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #ffffff10', borderRadius: '6px', fontSize: '11px' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 mt-2">
+              {donutData.slice(0, 4).map((d, i) => (
+                <span key={i} className="text-[10px] text-white/50 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: d.fill }} />
+                  {d.name}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 glass-panel p-5">
+            <h4 className="text-xs font-bold text-white/40 uppercase tracking-wider mb-3">
+              🏆 Nejvíce používaný obal
+            </h4>
+            {kpi.topMaterial && (
+              <div className="flex items-center gap-6">
+                <div>
+                  <p className="text-2xl font-bold text-white font-mono">{kpi.topMaterial.material}</p>
+                  <p className="text-sm text-purple-400 mt-1">{kpi.topMaterial.total_hus.toLocaleString()} HU celkem</p>
+                </div>
+                {kpi.topMaterial.timeline.length > 1 && (
+                  <div className="flex-1 h-[120px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={kpi.topMaterial.timeline} margin={{ top: 5, right: 5, left: -30, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="topMatGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#c084fc" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#c084fc" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <Area type="monotone" dataKey="hus" stroke="#c084fc" strokeWidth={2} fillOpacity={1} fill="url(#topMatGrad)" dot={false} />
+                        <XAxis dataKey="date" hide />
+                        <YAxis hide />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Vyhledávání + filtry */}
       <div className="glass-panel p-5 space-y-4">
@@ -146,21 +280,30 @@ export default function PackAnalyticsPage() {
           Pro zadaný dotaz nebyly nalezeny žádné obalové materiály.
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6">
+        <div className="grid grid-cols-1 gap-5">
           {materials.map((mat, idx) => {
             const gradientId = `grad-${sanitizeId(mat.material)}-${idx}`;
+            const totalHUs = materials.reduce((s, m) => s + m.total_hus, 0);
+            const pctOfTotal = totalHUs > 0 ? ((mat.total_hus / totalHUs) * 100).toFixed(1) : '0';
+            
             return (
-              <div key={mat.material || idx} className="glass-panel p-6 flex flex-col gap-6">
+              <div key={mat.material || idx} className="glass-panel p-6 flex flex-col gap-5 hover:bg-white/[0.01] transition-colors">
                 
                 <div className="flex justify-between items-center border-b border-white/5 pb-4">
-                  <h3 className="text-xl font-bold text-white font-mono">{mat.material}</h3>
-                  <div className="bg-white/5 rounded-lg px-6 py-2 border border-white/5 text-center">
-                    <p className="text-xs text-white/40 uppercase tracking-wider">Zabalených HU celkem</p>
-                    <p className="text-2xl font-bold text-purple-400">{mat.total_hus.toLocaleString()}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: MATERIAL_COLORS[idx % MATERIAL_COLORS.length] }} />
+                    <h3 className="text-xl font-bold text-white font-mono">{mat.material}</h3>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-white/30 bg-white/5 px-2.5 py-1 rounded-full">{pctOfTotal}% celku</span>
+                    <div className="bg-white/5 rounded-lg px-5 py-2 border border-white/5 text-center">
+                      <p className="text-xs text-white/40 uppercase tracking-wider">HU celkem</p>
+                      <p className="text-2xl font-bold text-purple-400">{mat.total_hus.toLocaleString()}</p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="w-full h-[250px] bg-white/[0.02] rounded-xl p-4 pt-6 border border-white/5 relative">
+                <div className="w-full h-[220px] bg-white/[0.02] rounded-xl p-4 pt-6 border border-white/5 relative">
                   <h4 className="absolute top-4 left-4 text-xs font-semibold text-white/50 flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
                     Vývoj spotřeby (počet HU v čase)
@@ -170,8 +313,8 @@ export default function PackAnalyticsPage() {
                       <AreaChart data={mat.timeline} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
                         <defs>
                           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#c084fc" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#c084fc" stopOpacity={0}/>
+                            <stop offset="5%" stopColor={MATERIAL_COLORS[idx % MATERIAL_COLORS.length]} stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor={MATERIAL_COLORS[idx % MATERIAL_COLORS.length]} stopOpacity={0}/>
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
@@ -191,13 +334,13 @@ export default function PackAnalyticsPage() {
                         <Tooltip 
                           contentStyle={{ backgroundColor: '#1e1e2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                           labelStyle={{ color: '#ffffff80' }}
-                          itemStyle={{ color: '#c084fc' }}
+                          itemStyle={{ color: MATERIAL_COLORS[idx % MATERIAL_COLORS.length] }}
                         />
                         <Area 
                           type="monotone" 
                           dataKey="hus" 
                           name="Počet HU"
-                          stroke="#c084fc" 
+                          stroke={MATERIAL_COLORS[idx % MATERIAL_COLORS.length]}
                           strokeWidth={2}
                           fillOpacity={1} 
                           fill={`url(#${gradientId})`} 

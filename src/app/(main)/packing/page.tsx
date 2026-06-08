@@ -168,19 +168,19 @@ export default function PackingPage() {
         </div>
 
         <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (Ks)</h3>
+          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (HU)</h3>
           <div className="h-[280px] w-full">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                   <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
                   <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  <Bar dataKey="packingNormal" name="Normální" stackId="a" fill="#10b981" radius={[0,0,0,0]} />
-                  <Bar dataKey="packingExpress" name="Express" stackId="a" fill="#f59e0b" radius={[0,0,0,0]} />
-                  <Bar dataKey="packingOE" name="OE" stackId="a" fill="#ef4444" radius={[4,4,0,0]} />
+                  <Bar dataKey="packingNormalHUs" name="Normální (HU)" stackId="a" fill="#10b981" radius={[0,0,0,0]} />
+                  <Bar dataKey="packingExpressHUs" name="Express (HU)" stackId="a" fill="#f59e0b" radius={[0,0,0,0]} />
+                  <Bar dataKey="packingOEHUs" name="OE (HU)" stackId="a" fill="#ef4444" radius={[4,4,0,0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}

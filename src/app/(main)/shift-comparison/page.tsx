@@ -67,10 +67,10 @@ export default function ShiftComparisonPage() {
   ];
 
   const categoryBarData = [
-    { name: 'Směna A (Pick)', Normal: shiftStats.a.pickingNormal, Express: shiftStats.a.pickingExpress, OE: shiftStats.a.pickingOE },
-    { name: 'Směna B (Pick)', Normal: shiftStats.b.pickingNormal, Express: shiftStats.b.pickingExpress, OE: shiftStats.b.pickingOE },
-    { name: 'Směna A (Pack)', Normal: shiftStats.a.packingNormal, Express: shiftStats.a.packingExpress, OE: shiftStats.a.packingOE },
-    { name: 'Směna B (Pack)', Normal: shiftStats.b.packingNormal, Express: shiftStats.b.packingExpress, OE: shiftStats.b.packingOE },
+    { name: 'Směna A (Pick)', Normal: shiftStats.a.pickingNormalTOs, Express: shiftStats.a.pickingExpressTOs, OE: shiftStats.a.pickingOETOs },
+    { name: 'Směna B (Pick)', Normal: shiftStats.b.pickingNormalTOs, Express: shiftStats.b.pickingExpressTOs, OE: shiftStats.b.pickingOETOs },
+    { name: 'Směna A (Pack)', Normal: shiftStats.a.packingNormalHUs, Express: shiftStats.a.packingExpressHUs, OE: shiftStats.a.packingOEHUs },
+    { name: 'Směna B (Pack)', Normal: shiftStats.b.packingNormalHUs, Express: shiftStats.b.packingExpressHUs, OE: shiftStats.b.packingOEHUs },
   ];
 
   const rows = [
@@ -175,7 +175,7 @@ export default function ShiftComparisonPage() {
         </div>
 
         <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle směn (Ks)</h3>
+          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle směn (TO/HU)</h3>
           <div className="h-[280px]">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
               <ResponsiveContainer width="100%" height="100%">
@@ -185,9 +185,9 @@ export default function ShiftComparisonPage() {
                   <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
                   <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  <Bar dataKey="Normal" name="Normální" stackId="cat" fill="#10b981" radius={[0,0,0,0]} />
-                  <Bar dataKey="Express" name="Express" stackId="cat" fill="#f59e0b" radius={[0,0,0,0]} />
-                  <Bar dataKey="OE" name="OE" stackId="cat" fill="#ef4444" radius={[4,4,0,0]} />
+                  <Bar dataKey="Normal" name="Normální (TO/HU)" stackId="cat" fill="#10b981" radius={[0,0,0,0]} />
+                  <Bar dataKey="Express" name="Express (TO/HU)" stackId="cat" fill="#f59e0b" radius={[0,0,0,0]} />
+                  <Bar dataKey="OE" name="OE (TO/HU)" stackId="cat" fill="#ef4444" radius={[4,4,0,0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}

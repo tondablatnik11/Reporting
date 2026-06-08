@@ -335,6 +335,8 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     pickingNormal: 0, pickingExpress: 0, pickingOE: 0,
     packingNormal: 0, packingExpress: 0, packingOE: 0,
     pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>(),
+    pickingNormalTOsSet: new Set<string>(), pickingExpressTOsSet: new Set<string>(), pickingOETOsSet: new Set<string>(),
+    packingNormalHUsSet: new Set<string>(), packingExpressHUsSet: new Set<string>(), packingOEHUsSet: new Set<string>(),
   });
 
   const processData = (map: Map<any, any>, extractKey: (d: any) => any) => {
@@ -344,10 +346,11 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
         const row = map.get(key);
         row.picking += p.quantity;
         const cat = p.category || 'Normal';
-        if (cat === 'Express') row.pickingExpress += p.quantity;
-        else if (cat === 'OE') row.pickingOE += p.quantity;
-        else row.pickingNormal += p.quantity;
-        row.pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
+        const toKey = `${p.to_number}-${p.to_item || Math.random()}`;
+        if (cat === 'Express') { row.pickingExpress += p.quantity; row.pickingExpressTOsSet.add(toKey); }
+        else if (cat === 'OE') { row.pickingOE += p.quantity; row.pickingOETOsSet.add(toKey); }
+        else { row.pickingNormal += p.quantity; row.pickingNormalTOsSet.add(toKey); }
+        row.pickingTOsSet.add(toKey);
       }
     });
     packingData.forEach(p => {
@@ -357,9 +360,9 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
         const row = map.get(key);
         row.packing += (p.quantity || 0);
         const cat = p.category || 'Normal';
-        if (cat === 'Express') row.packingExpress += (p.quantity || 0);
-        else if (cat === 'OE') row.packingOE += (p.quantity || 0);
-        else row.packingNormal += (p.quantity || 0);
+        if (cat === 'Express') { row.packingExpress += (p.quantity || 0); row.packingExpressHUsSet.add(p.internal_hu); }
+        else if (cat === 'OE') { row.packingOE += (p.quantity || 0); row.packingOEHUsSet.add(p.internal_hu); }
+        else { row.packingNormal += (p.quantity || 0); row.packingNormalHUsSet.add(p.internal_hu); }
         row.packingHUsSet.add(p.internal_hu);
       }
     });
@@ -369,7 +372,7 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     const map = new Map<string, any>();
     hourlySlots.forEach(slot => map.set(`${slot.start} - ${slot.end}`, { time: slot.start, fullTime: `${slot.start} - ${slot.end}`, ...initCounters() }));
     processData(map, (d) => getSlot(d));
-    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
   }
 
   if (period === "week") {
@@ -377,7 +380,7 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     const map = new Map<number, any>();
     for (let i = 1; i <= 7; i++) map.set(i, { time: days[i-1], fullTime: days[i-1], ...initCounters() });
     processData(map, (d) => { let day = new Date(d).getDay(); return day === 0 ? 7 : day; });
-    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
   }
 
   if (period === "month") {
@@ -387,7 +390,7 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     const map = new Map<number, any>();
     for (let i = 1; i <= daysInMonth; i++) map.set(i, { time: String(i), fullTime: `${i}.`, ...initCounters() });
     processData(map, (d) => new Date(d).getDate());
-    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
   }
 
   const map = new Map<string, any>();
@@ -396,11 +399,11 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     if (!map.has(key)) map.set(key, { time: key.substring(5), fullTime: key, ...initCounters() });
     return key;
   });
-  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
 }
 
 export function aggregateShiftStats(pickingData: PickingRecord[], packingData: PackingRecord[]) {
-  const initT = () => ({ pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>(), pickingNormal: 0, pickingExpress: 0, pickingOE: 0, packingNormal: 0, packingExpress: 0, packingOE: 0 });
+  const initT = () => ({ pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>(), pickingNormal: 0, pickingExpress: 0, pickingOE: 0, packingNormal: 0, packingExpress: 0, packingOE: 0, pickingNormalTOs: new Set<string>(), pickingExpressTOs: new Set<string>(), pickingOETOs: new Set<string>(), packingNormalHUs: new Set<string>(), packingExpressHUs: new Set<string>(), packingOEHUs: new Set<string>() });
   const a = initT();
   const b = initT();
 
@@ -409,13 +412,14 @@ export function aggregateShiftStats(pickingData: PickingRecord[], packingData: P
     const t = getShiftLabel(new Date(p.confirmed_at)) === "A" ? a : b;
     t.pickingKs += p.quantity;
     t.weight += (p.weight || 0);
-    t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
+    const toKey = `${p.to_number}-${p.to_item || Math.random()}`;
+    t.pickingTOs.add(toKey);
     if (p.operator) t.operators.add(p.operator);
     
     const cat = p.category || 'Normal';
-    if (cat === 'Express') t.pickingExpress += p.quantity;
-    else if (cat === 'OE') t.pickingOE += p.quantity;
-    else t.pickingNormal += p.quantity;
+    if (cat === 'Express') { t.pickingExpress += p.quantity; t.pickingExpressTOs.add(toKey); }
+    else if (cat === 'OE') { t.pickingOE += p.quantity; t.pickingOETOs.add(toKey); }
+    else { t.pickingNormal += p.quantity; t.pickingNormalTOs.add(toKey); }
   });
   
   packingData.forEach(p => {
@@ -427,13 +431,13 @@ export function aggregateShiftStats(pickingData: PickingRecord[], packingData: P
     if (p.operator) t.operators.add(p.operator);
 
     const cat = p.category || 'Normal';
-    if (cat === 'Express') t.packingExpress += (p.quantity || 0);
-    else if (cat === 'OE') t.packingOE += (p.quantity || 0);
-    else t.packingNormal += (p.quantity || 0);
+    if (cat === 'Express') { t.packingExpress += (p.quantity || 0); t.packingExpressHUs.add(p.internal_hu); }
+    else if (cat === 'OE') { t.packingOE += (p.quantity || 0); t.packingOEHUs.add(p.internal_hu); }
+    else { t.packingNormal += (p.quantity || 0); t.packingNormalHUs.add(p.internal_hu); }
   });
 
   return {
-    a: { ...a, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, operators: a.operators.size },
-    b: { ...b, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, operators: b.operators.size },
+    a: { ...a, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, operators: a.operators.size, pickingNormalTOs: a.pickingNormalTOs.size, pickingExpressTOs: a.pickingExpressTOs.size, pickingOETOs: a.pickingOETOs.size, packingNormalHUs: a.packingNormalHUs.size, packingExpressHUs: a.packingExpressHUs.size, packingOEHUs: a.packingOEHUs.size },
+    b: { ...b, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, operators: b.operators.size, pickingNormalTOs: b.pickingNormalTOs.size, pickingExpressTOs: b.pickingExpressTOs.size, pickingOETOs: b.pickingOETOs.size, packingNormalHUs: b.packingNormalHUs.size, packingExpressHUs: b.packingExpressHUs.size, packingOEHUs: b.packingOEHUs.size },
   };
 }

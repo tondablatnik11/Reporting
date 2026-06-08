@@ -152,7 +152,7 @@ export default function HourlyTrendPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-panel p-6">
           <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
-            <PackageSearch className="w-5 h-5 text-blue-400" /> Struktura Picking zakázek
+            <PackageSearch className="w-5 h-5 text-blue-400" /> Struktura Picking zakázek (TO)
           </h3>
           <div className="h-[280px] w-full">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
@@ -168,9 +168,9 @@ export default function HourlyTrendPage() {
                   <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Area type="monotone" dataKey="pickingNormal" name="Normální (Ks)" stackId="1" stroke="#10b981" fill="url(#colorNorm)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="pickingExpress" name="Express (Ks)" stackId="1" stroke="#f59e0b" fill="url(#colorExp)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="pickingOE" name="OE (Ks)" stackId="1" stroke="#ef4444" fill="url(#colorOe)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pickingNormalTOs" name="Normální (TO)" stackId="1" stroke="#10b981" fill="url(#colorNorm)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pickingExpressTOs" name="Express (TO)" stackId="1" stroke="#f59e0b" fill="url(#colorExp)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pickingOETOs" name="OE (TO)" stackId="1" stroke="#ef4444" fill="url(#colorOe)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -179,7 +179,7 @@ export default function HourlyTrendPage() {
 
         <div className="glass-panel p-6">
           <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
-            <Box className="w-5 h-5 text-purple-400" /> Struktura Packing zakázek
+            <Box className="w-5 h-5 text-purple-400" /> Struktura Packing zakázek (HU)
           </h3>
           <div className="h-[280px] w-full">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
@@ -195,9 +195,9 @@ export default function HourlyTrendPage() {
                   <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Area type="monotone" dataKey="packingNormal" name="Normální (Ks)" stackId="1" stroke="#10b981" fill="url(#colorNormP)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="packingExpress" name="Express (Ks)" stackId="1" stroke="#f59e0b" fill="url(#colorExpP)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="packingOE" name="OE (Ks)" stackId="1" stroke="#ef4444" fill="url(#colorOeP)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingNormalHUs" name="Normální (HU)" stackId="1" stroke="#10b981" fill="url(#colorNormP)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingExpressHUs" name="Express (HU)" stackId="1" stroke="#f59e0b" fill="url(#colorExpP)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingOEHUs" name="OE (HU)" stackId="1" stroke="#ef4444" fill="url(#colorOeP)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
