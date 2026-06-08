@@ -25,9 +25,9 @@ export default function PackingPage() {
   const [compareDateValue, setCompareDateValue] = useState<string>("");
   const [selectedOperators, setSelectedOperators] = useState<Set<string>>(new Set());
 
-  const { pickingData: localPicking, packingData: localPacking } = useData();
+  const { pickingData: localPicking, packingData: localPacking, likpData } = useData();
   const { pickingData, packingData, compPacking, loading } = usePeriodData(
-    period, localPicking, localPacking, dateValue, isComparing, compareDateValue
+    period, localPicking, localPacking, dateValue, isComparing, compareDateValue, likpData
   );
 
   const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
@@ -90,13 +90,6 @@ export default function PackingPage() {
     return { operatorChartData: Array.from(map.values()), operators: Array.from(ops) };
   }, [packingData, period, chartData]);
 
-  const recentPacking = useMemo(() =>
-    packingData.filter(a => a.created_at)
-      .sort((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime())
-      .slice(0, 8),
-    [packingData]
-  );
-
   const toggleOp = (op: string) => setSelectedOperators(prev => {
     const next = new Set(prev);
     next.has(op) ? next.delete(op) : next.add(op);
@@ -153,25 +146,45 @@ export default function PackingPage() {
         </div>
       </div>
 
-      <div className="glass-panel p-6">
-        <h3 className="text-lg font-bold text-white mb-5">Packing – HU a Kusy v čase</h3>
-        <div className="h-[300px] w-full">
-          {loading ? (
-            <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: 'rgba(10,14,30,0.95)', borderColor: 'rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '13px' }} itemStyle={{ color: '#fff' }} />
-                <Legend wrapperStyle={{ paddingTop: '12px', fontSize: '12px' }} />
-                <Bar yAxisId="left" dataKey="packing" name="Kusy (Ks)" fill="#b18cff" fillOpacity={0.7} radius={[4,4,0,0]} />
-                <Line yAxisId="right" type="monotone" dataKey="packingHUs" name="Handling Unity (HU)" stroke="#e4b4ff" strokeWidth={3} dot={{ r: 4, fill: "#e4b4ff", strokeWidth: 0 }} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="glass-panel p-6">
+          <h3 className="text-lg font-bold text-white mb-5">Vývoj počtu HU a Kusů</h3>
+          <div className="h-[280px] w-full">
+            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                  <Bar yAxisId="left" dataKey="packing" name="Kusy (Ks)" fill="#b18cff" fillOpacity={0.7} radius={[4,4,0,0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="packingHUs" name="Handling Unity (HU)" stroke="#e4b4ff" strokeWidth={3} dot={{ r: 4, fill: "#e4b4ff", strokeWidth: 0 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div className="glass-panel p-6">
+          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (Ks)</h3>
+          <div className="h-[280px] w-full">
+            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                  <Bar dataKey="packingNormal" name="Normální" stackId="a" fill="#10b981" radius={[0,0,0,0]} />
+                  <Bar dataKey="packingExpress" name="Express" stackId="a" fill="#f59e0b" radius={[0,0,0,0]} />
+                  <Bar dataKey="packingOE" name="OE" stackId="a" fill="#ef4444" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
       </div>
 
@@ -204,11 +217,11 @@ export default function PackingPage() {
             <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={operatorChartData} margin={{ top: 20, right: 10, left: 0, bottom: 5 }}>
+              <BarChart data={operatorChartData} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={{ backgroundColor: 'rgba(10,14,30,0.95)', borderColor: 'rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '13px' }} itemStyle={{ color: '#fff' }} />
+                <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
                 <Legend wrapperStyle={{ paddingTop: '16px', fontSize: '11px' }} />
                 {visibleOps.map((op) => {
                   const idx = operators.indexOf(op);
@@ -220,46 +233,7 @@ export default function PackingPage() {
         </div>
       </div>
 
-      <EmployeePerformance 
-        filterType="packing" 
-        pickingData={pickingData} 
-        packingData={packingData} 
-        loading={loading} 
-      />
-
-      <div className="glass-panel overflow-hidden">
-        <div className="p-5 border-b border-white/5 bg-white/[0.02]">
-          <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Poslední Packing aktivity</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-white/5 bg-white/[0.02]">
-                <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider">HU</th>
-                <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider">Operátor</th>
-                <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider">Materiál</th>
-                <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-right">Ks</th>
-                <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-right">Váha</th>
-                <th className="px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider text-right">Čas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentPacking.length === 0 ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-center text-white/30">Žádná data pro zvolené období.</td></tr>
-              ) : recentPacking.map((row, i) => (
-                <tr key={i} className={`hover:bg-white/[0.03] transition-colors ${i % 2 === 1 ? 'bg-white/[0.015]' : ''}`}>
-                  <td className="px-5 py-3 text-sm font-medium text-white/80">{row.hu_number || row.internal_hu}</td>
-                  <td className="px-5 py-3 text-sm text-white/60">{row.operator}</td>
-                  <td className="px-5 py-3 text-sm text-white/40">{row.material}</td>
-                  <td className="px-5 py-3 text-sm font-bold text-purple-400 text-right">{row.quantity}</td>
-                  <td className="px-5 py-3 text-sm text-white/50 text-right">{row.weight || '-'}</td>
-                  <td className="px-5 py-3 text-sm text-white/40 text-right">{row.created_at ? new Date(row.created_at).toLocaleString('cs-CZ') : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <EmployeePerformance filterType="packing" pickingData={pickingData} packingData={packingData} loading={loading} />
     </div>
   );
 }
