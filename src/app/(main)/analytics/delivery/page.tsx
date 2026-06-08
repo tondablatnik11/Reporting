@@ -11,6 +11,7 @@ type DeliveryDetail = {
   delivery: string;
   shipping_point: string;
   category: string;
+  carrier: string; // NOVÝ SLOUPEC
   pick_tos: number;
   pick_qty: number;
   pick_weight: number;
@@ -142,22 +143,28 @@ export default function DeliveryAnalyticsPage() {
                   onClick={() => toggleExpand(del.delivery)}
                   className="w-full p-5 flex flex-col md:flex-row gap-4 md:items-center text-left hover:bg-white/[0.02] transition-colors"
                 >
-                  <div className="flex items-center gap-3 md:w-64 shrink-0">
-                    <Truck className="w-5 h-5 text-cyan-400 shrink-0" />
+                  <div className="flex items-start md:items-center gap-3 md:w-[320px] shrink-0">
+                    <Truck className="w-5 h-5 text-cyan-400 shrink-0 mt-1 md:mt-0" />
                     <div>
                       <p className="text-lg font-bold text-white font-mono">{del.delivery}</p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center flex-wrap gap-2 mt-1">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cat.bg} ${cat.text}`}>
                           {cat.label}
                         </span>
                         {del.shipping_point && (
                           <span className="text-xs text-white/30">{del.shipping_point}</span>
                         )}
+                        {/* NOVÉ: Zobrazení dopravce */}
+                        {del.carrier && (
+                          <span className="text-xs text-white/40 bg-white/5 px-2 py-0.5 rounded border border-white/10 flex items-center gap-1">
+                            Dopravce: <span className="font-semibold text-white/60">{del.carrier}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-6 flex-wrap flex-1">
+                  <div className="flex gap-6 flex-wrap flex-1 justify-start md:justify-end pr-4">
                     <div className="text-center min-w-[80px]">
                       <p className="text-xs text-white/40 flex items-center gap-1 justify-center"><PackageSearch className="w-3 h-3" /> Pick TO</p>
                       <p className="text-xl font-bold text-blue-400">{Number(del.pick_tos).toLocaleString()}</p>
