@@ -1,465 +1,438 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { supabase } from "@/lib/supabase";
+import {
+  PickingRecord,
+  PackingRecord,
+  hourlySlots,
+  getSlot,
+  getShiftLabel,
+} from "@/lib/data-context";
 
-export type PickingRecord = {
-  to_number: string;
-  to_item?: string;
-  operator: string;
-  quantity: number;
-  weight?: number;
-  confirmed_at: Date;
-  queue?: string;
-  delivery?: string;
-  category?: string;
-  material?: string;
-  source_storage_bin?: string;
-};
+export type Period = "day" | "week" | "month" | "all";
 
-export type PackingRecord = {
-  internal_hu: string;
-  hu_number?: string;
-  material?: string; // used for single item
-  materials?: string[]; // used to collect all materials
-  packaging_material?: string; // e.g. CARTON-05
-  operator?: string;
-  quantity?: number;
-  weight?: number;
-  created_at?: Date;
-  category?: string; // e.g. Normal, Express, OE
-  delivery?: string;
-};
+function getStartOfWeek(year: number, week: number) {
+  const d = new Date(year, 0, 4);
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - day + 1 + (week - 1) * 7);
+  return d;
+}
 
-export const hourlySlots = [
-  { start: "05:45", end: "06:45", startHour: 5, startMin: 45 },
-  { start: "06:45", end: "07:45", startHour: 6, startMin: 45 },
-  { start: "07:45", end: "08:45", startHour: 7, startMin: 45 },
-  { start: "08:45", end: "09:45", startHour: 8, startMin: 45 },
-  { start: "09:45", end: "10:45", startHour: 9, startMin: 45 },
-  { start: "10:45", end: "11:45", startHour: 10, startMin: 45 },
-  { start: "11:45", end: "12:45", startHour: 11, startMin: 45 },
-  { start: "12:45", end: "13:45", startHour: 12, startMin: 45 },
-  { start: "13:45", end: "14:45", startHour: 13, startMin: 45 },
-  { start: "14:45", end: "15:45", startHour: 14, startMin: 45 },
-  { start: "15:45", end: "16:45", startHour: 15, startMin: 45 },
-  { start: "16:45", end: "17:45", startHour: 16, startMin: 45 },
-  { start: "17:45", end: "18:45", startHour: 17, startMin: 45 },
-  { start: "18:45", end: "19:45", startHour: 18, startMin: 45 },
-  { start: "19:45", end: "20:45", startHour: 19, startMin: 45 },
-  { start: "20:45", end: "21:45", startHour: 20, startMin: 45 },
-];
+export function getPeriodRange(period: Period, dateValue?: string): { from: string; to: string } {
+  let from = new Date();
+  let to = new Date();
 
-export const getSlot = (date: Date | undefined) => {
-  if (!date) return "Mimo směnu";
-  const d = new Date(date);
-  const m = d.getHours() * 60 + d.getMinutes();
-  for (const slot of hourlySlots) {
-    const startM = slot.startHour * 60 + slot.startMin;
-    const endM = startM + 60;
-    if (m >= startM && m < endM) {
-      return `${slot.start} - ${slot.end}`;
+  if (period === "day") {
+    if (dateValue) {
+      from = new Date(dateValue);
+      if (isNaN(from.getTime())) from = new Date(); 
     }
-  }
-  return "Mimo směnu";
-};
-
-// Shift A/B: alternating weekly. Even ISO weeks = Shift A morning, odd = Shift B morning.
-export function getISOWeekNumber(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-}
-
-export function getShiftConfig() {
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem('hellmann_shifts');
-      if (stored) return JSON.parse(stored);
-    } catch(e) {}
-  }
-  return {
-    morningStart: "05:45",
-    morningEnd: "13:45",
-    afternoonStart: "13:45",
-    afternoonEnd: "21:45",
-    breakMinutes: 30,
-    evenWeekShiftAMorning: true,
-  };
-}
-
-export function isMorningShift(date: Date): boolean {
-  const config = getShiftConfig();
-  const h = date.getHours();
-  const m = date.getMinutes();
-  const [endH, endM] = config.morningEnd.split(':').map(Number);
-  return (h * 60 + m) < (endH * 60 + endM);
-}
-
-export function getShiftLabel(date: Date): "A" | "B" {
-  const config = getShiftConfig();
-  const weekNum = getISOWeekNumber(date);
-  const isEvenWeek = weekNum % 2 === 0;
-  const morning = isMorningShift(date);
-  // Based on configuration:
-  const shiftAIsMorning = config.evenWeekShiftAMorning ? isEvenWeek : !isEvenWeek;
-  
-  if (shiftAIsMorning) {
-    return morning ? "A" : "B";
+    from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "week") {
+    if (dateValue && dateValue.includes("-W")) {
+      const [y, w] = dateValue.split("-W");
+      from = getStartOfWeek(Number(y), Number(w));
+      if (isNaN(from.getTime())) {
+        from = new Date();
+        const day = from.getDay() || 7;
+        from.setDate(from.getDate() - day + 1);
+      }
+    } else {
+      const day = from.getDay() || 7;
+      from.setDate(from.getDate() - day + 1);
+    }
+    from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setDate(to.getDate() + 6);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "month") {
+    if (dateValue && dateValue.includes("-") && !dateValue.includes("W")) {
+      const [y, m] = dateValue.split("-");
+      from = new Date(Number(y), Number(m) - 1, 1, 0, 0, 0, 0);
+      if (isNaN(from.getTime())) {
+        from = new Date(new Date().getFullYear(), new Date().getMonth(), 1, 0, 0, 0, 0);
+      }
+    } else {
+      from = new Date(from.getFullYear(), from.getMonth(), 1, 0, 0, 0, 0);
+    }
+    to = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
   } else {
-    return morning ? "B" : "A";
+    from = new Date(2020, 0, 1);
   }
+
+  return { from: from.toISOString(), to: to.toISOString() };
 }
 
-type DataContextType = {
-  pickingData: PickingRecord[];
-  packingData: PackingRecord[];
-  likpData: Record<string, string>;
-  addPickingData: (data: PickingRecord[]) => void;
-  addPackingData: (data: PackingRecord[]) => void;
-  addLikpData: (data: {delivery: string, shipping_point: string, carrier?: string}[]) => void;
-  clearData: () => void;
-};
+export function getPreviousPeriodRange(period: Period, dateValue?: string): { from: string; to: string } {
+  let from = new Date();
+  let to = new Date();
 
-const DataContext = createContext<DataContextType | undefined>(undefined);
+  if (period === "day") {
+    if (dateValue) {
+      from = new Date(dateValue);
+      if (isNaN(from.getTime())) from = new Date();
+    }
+    from.setDate(from.getDate() - 1);
+    from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "week") {
+    if (dateValue && dateValue.includes("-W")) {
+      const [y, w] = dateValue.split("-W");
+      from = getStartOfWeek(Number(y), Number(w) - 1);
+      if (isNaN(from.getTime())) {
+        from = new Date();
+        const day = from.getDay() || 7;
+        from.setDate(from.getDate() - day + 1 - 7);
+      }
+    } else {
+      const day = from.getDay() || 7;
+      from.setDate(from.getDate() - day + 1 - 7);
+    }
+    from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setDate(to.getDate() + 6);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "month") {
+    if (dateValue && dateValue.includes("-") && !dateValue.includes("W")) {
+      const [y, m] = dateValue.split("-");
+      from = new Date(Number(y), Number(m) - 2, 1, 0, 0, 0, 0);
+      if (isNaN(from.getTime())) {
+         from = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1, 0, 0, 0, 0);
+      }
+    } else {
+      from = new Date(from.getFullYear(), from.getMonth() - 1, 1, 0, 0, 0, 0);
+    }
+    to = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
+  } else {
+    from = new Date(2020, 0, 1);
+  }
 
-export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [pickingData, setPickingData] = useState<PickingRecord[]>([]);
-  const [packingData, setPackingData] = useState<PackingRecord[]>([]);
-  const [likpData, setLikpData] = useState<Record<string, string>>({});
+  return { from: from.toISOString(), to: to.toISOString() };
+}
 
-  const addLikpData = (data: {delivery: string, shipping_point: string, carrier?: string}[]) => {
-    setLikpData(prev => {
-      const next = { ...prev };
-      data.forEach(item => {
-         let cat = "Normal";
-         if (item.shipping_point === "FM21" || item.shipping_point === "FM22") cat = "Express";
-         else if (item.shipping_point === "FM24") cat = "OE";
-         // FM20, FM23 is Normal
-         next[item.delivery] = cat;
-      });
-      return next;
-    });
-  };
-
-  const addPickingData = (data: PickingRecord[]) => {
-    setPickingData(prev => [...prev, ...data]);
-  };
-
-  const addPackingData = (data: PackingRecord[]) => {
-    setPackingData(prev => {
-      // Potřebujeme spojit existující data s novými na základě internal_hu
-      // VEKP přináší operator a created_at, VEPO přináší material a quantity
-      const map = new Map<string, PackingRecord>();
+// Helper pro vytažení kategorií podle seznamu dodávek
+async function fetchCategoriesMap(deliveries: string[]): Promise<Record<string, string>> {
+  const uniqueDels = Array.from(new Set(deliveries.filter(d => !!d && d !== 'undefined')));
+  if (uniqueDels.length === 0) return {};
+  
+  const catMap: Record<string, string> = {};
+  const chunkSize = 200;
+  
+  for (let i = 0; i < uniqueDels.length; i += chunkSize) {
+    const chunk = uniqueDels.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from("likp_deliveries")
+      .select("delivery, shipping_point")
+      .in("delivery", chunk);
       
-      [...prev, ...data].forEach(item => {
-        if (!map.has(item.internal_hu)) {
-          map.set(item.internal_hu, { 
-            ...item, 
-            materials: item.material ? [item.material] : (item.materials || []) 
-          });
-        } else {
-          const existing = map.get(item.internal_hu)!;
-          
-          const combinedMaterials = new Set(existing.materials || []);
-          if (existing.material) combinedMaterials.add(existing.material);
-          if (item.material) combinedMaterials.add(item.material);
-          if (item.materials) item.materials.forEach(m => combinedMaterials.add(m));
-
-          map.set(item.internal_hu, {
-            ...existing,
-            ...item,
-            operator: item.operator || existing.operator,
-            created_at: item.created_at || existing.created_at,
-            material: item.material || existing.material,
-            materials: Array.from(combinedMaterials),
-            quantity: item.quantity || existing.quantity,
-            packaging_material: item.packaging_material || existing.packaging_material,
-            category: item.category || existing.category,
-            delivery: item.delivery || existing.delivery,
-          });
-        }
+    if (!error && data) {
+      data.forEach(d => {
+        let cat = "Normal";
+        if (d.shipping_point === "FM21" || d.shipping_point === "FM22") cat = "Express";
+        else if (d.shipping_point === "FM24") cat = "OE";
+        catMap[d.delivery] = cat;
       });
-      return Array.from(map.values());
-    });
-  };
-
-  const clearData = () => {
-    setPickingData([]);
-    setPackingData([]);
-    setLikpData({});
-  };
-
-  return (
-    <DataContext.Provider value={{ pickingData, packingData, likpData, addPickingData, addPackingData, addLikpData, clearData }}>
-      {children}
-    </DataContext.Provider>
-  );
-}
-
-export function useData() {
-  const context = useContext(DataContext);
-  if (context === undefined) {
-    throw new Error("useData must be used within a DataProvider");
+    }
   }
-  return context;
+  return catMap;
 }
 
-// Interface for shift performance data
-interface ShiftPerformance {
-  picking: {
-    quantity: number;
-    tos: number;
-  };
-  packing: {
-    quantity: number;
-    hus: number;
-  };
-}
+async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
+  let allData: any[] = [];
+  let hasMore = true;
+  let page = 0;
+  const pageSize = 1000;
 
-// Interface for daily performance comparison
-export interface DailyComparison {
-  date: string;
-  morning: ShiftPerformance;
-  evening: ShiftPerformance;
-  total: {
-    picking: number;
-    packing: number;
-  };
-}
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from("ltap_picking")
+      .select("tanum, tapos, picker_sap_id, dest_target_qty, weight, confirmed_at, delivery")
+      .gte("confirmed_at", from)
+      .lte("confirmed_at", to)
+      .not("picker_sap_id", "is", null)
+      .order("confirmed_at", { ascending: true })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
 
-import { loadDailyPerformance, loadMonthlyPerformance, loadWeeklyPerformance, DailyPerformance } from '@/lib/history';
+    if (error) {
+      console.error("Picking fetch error:", error.message);
+      break;
+    }
 
-export function useAggregatedData() {
-  // Get current date in YYYY-MM-DD format
-  const today = new Date().toISOString().split('T')[0];
-  const { pickingData, packingData, likpData } = useData();
+    if (data && data.length > 0) {
+      allData = [...allData, ...data];
+      page++;
+      if (data.length < pageSize) hasMore = false;
+    } else {
+      hasMore = false;
+    }
+  }
 
-  // Obohacení dat o kategorie z LIKP
-  const enrichedPickingData = pickingData.map(p => ({
-    ...p,
-    category: p.delivery && likpData[p.delivery] ? likpData[p.delivery] : "Normal"
+  const mapped = allData.map((r: any) => ({
+    to_number: r.tanum,
+    to_item: r.tapos,
+    operator: r.picker_sap_id || "",
+    quantity: Number(r.dest_target_qty) || 0,
+    weight: Number(r.weight) || 0,
+    confirmed_at: new Date(r.confirmed_at),
+    delivery: r.delivery,
   }));
 
-  const enrichedPackingData = packingData.map(p => ({
-    ...p,
-    category: p.category || (p.delivery && likpData[p.delivery] ? likpData[p.delivery] : "Normal")
-  }));
+  const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
+  mapped.forEach(m => { m.category = m.delivery ? (catMap[m.delivery] || 'Normal') : 'Normal'; });
 
-  const chartDataMap = new Map();
-  hourlySlots.forEach(slot => {
-    chartDataMap.set(`${slot.start} - ${slot.end}`, {
-      time: slot.start,
-      fullTime: `${slot.start} - ${slot.end}`,
-      picking: 0,
-      packing: 0,
-      pickingTOsSet: new Set(),
-      packingHUsSet: new Set(),
-      morningPicking: 0,
-      morningPacking: 0,
-      eveningPicking: 0,
-      eveningPacking: 0,
-    });
+  return mapped;
+}
+
+async function fetchPackingFromDb(from: string, to: string): Promise<PackingRecord[]> {
+  let allData: any[] = [];
+  let hasMore = true;
+  let page = 0;
+  const pageSize = 1000;
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from("vekp_packing_headers")
+      .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, delivery, vepo_packing_items(packed_quantity, material)")
+      .gte("packed_at", from)
+      .lte("packed_at", to)
+      .not("packer_sap_id", "is", null)
+      .order("packed_at", { ascending: true })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+
+    if (error) {
+      console.error("Packing fetch error:", error.message);
+      break;
+    }
+
+    if (data && data.length > 0) {
+      allData = [...allData, ...data];
+      page++;
+      if (data.length < pageSize) hasMore = false;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  const mapped = allData.map((r: any) => {
+    const vepoItems = Array.isArray(r.vepo_packing_items) ? r.vepo_packing_items : [];
+    const totalQuantity = vepoItems.reduce((sum: number, item: any) => sum + (Number(item.packed_quantity) || 0), 0);
+    const material = vepoItems.length > 0 ? vepoItems[0].material : r.packaging_material;
+
+    return {
+      internal_hu: r.internal_hu_number,
+      hu_number: r.handling_unit,
+      operator: r.packer_sap_id || "",
+      weight: Number(r.total_weight) || 0,
+      quantity: totalQuantity,
+      created_at: new Date(r.packed_at),
+      material: material,
+      delivery: r.delivery,
+    };
   });
-  chartDataMap.set("Mimo směnu", { time: "Mimo", fullTime: "Mimo směnu", picking: 0, packing: 0, pickingTOsSet: new Set(), packingHUsSet: new Set() });
 
-  let totalPicking = 0;
-  let totalPacking = 0;
-  const globalPickingTOs = new Set();
-  const globalPackingHUs = new Set();
+  const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
+  mapped.forEach(m => { m.category = m.delivery ? (catMap[m.delivery] || 'Normal') : 'Normal'; });
 
-  // Process picking data and determine shift based on time
-  enrichedPickingData.forEach(p => {
-    const slot = getSlot(p.confirmed_at);
-    if (chartDataMap.has(slot)) {
-      chartDataMap.get(slot).picking += p.quantity;
-      chartDataMap.get(slot).pickingTOsSet.add(p.to_number);
-      totalPicking += p.quantity;
-      globalPickingTOs.add(p.to_number);
+  return mapped;
+}
 
-      // Determine shift and update shift-specific data
-      const hour = p.confirmed_at.getHours();
-      if (hour >= 5 && hour < 14) {
-        chartDataMap.get(slot).morningPicking += p.quantity;
+export function usePeriodData(
+  period: Period,
+  localPicking: PickingRecord[],
+  localPacking: PackingRecord[],
+  dateValue?: string,
+  isComparing?: boolean,
+  compareDateValue?: string,
+  likpData: Record<string, string> = {}
+) {
+  const [dbPicking, setDbPicking] = useState<PickingRecord[]>([]);
+  const [dbPacking, setDbPacking] = useState<PackingRecord[]>([]);
+  const [dbPrevPicking, setDbPrevPicking] = useState<PickingRecord[]>([]);
+  const [dbPrevPacking, setDbPrevPacking] = useState<PackingRecord[]>([]);
+  const [compPicking, setCompPicking] = useState<PickingRecord[]>([]);
+  const [compPacking, setCompPacking] = useState<PackingRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const { from, to } = getPeriodRange(period, dateValue);
+    const { from: prevFrom, to: prevTo } = getPreviousPeriodRange(period, dateValue);
+    
+    setLoading(true);
+
+    const fetches = [
+      fetchPickingFromDb(from, to),
+      fetchPackingFromDb(from, to),
+      period !== "all" ? fetchPickingFromDb(prevFrom, prevTo) : Promise.resolve([]),
+      period !== "all" ? fetchPackingFromDb(prevFrom, prevTo) : Promise.resolve([]),
+    ];
+
+    if (isComparing && compareDateValue && period !== 'all') {
+      const compRange = getPeriodRange(period, compareDateValue);
+      fetches.push(fetchPickingFromDb(compRange.from, compRange.to));
+      fetches.push(fetchPackingFromDb(compRange.from, compRange.to));
+    }
+
+    Promise.all(fetches).then((results) => {
+      if (!active) return;
+      setDbPicking((results[0] as PickingRecord[]) || []);
+      setDbPacking((results[1] as PackingRecord[]) || []);
+      setDbPrevPicking((results[2] as PickingRecord[]) || []);
+      setDbPrevPacking((results[3] as PackingRecord[]) || []);
+      if (results.length > 4) {
+        setCompPicking((results[4] as PickingRecord[]) || []);
+        setCompPacking((results[5] as PackingRecord[]) || []);
       } else {
-        chartDataMap.get(slot).eveningPicking += p.quantity;
+        setCompPicking([]);
+        setCompPacking([]);
       }
-    }
+      setLoading(false);
+    }).catch((err) => {
+      if (!active) return;
+      console.error("DB fetch error:", err);
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [period, dateValue, isComparing, compareDateValue]);
+
+  const mergeLocalData = (dbData: any[], localData: any[], timeField: string, idField: string, dateValueStr?: string) => {
+    const { from, to } = getPeriodRange(period, dateValueStr || dateValue);
+    const fromTime = new Date(from).getTime();
+    const toTime = new Date(to).getTime();
+    const dbKeys = new Set(dbData.map(r => idField === 'tanum' ? `${r.to_number}-${r.to_item || '1'}` : r.internal_hu));
+    
+    const localOnly = localData.filter(r => {
+      const key = idField === 'tanum' ? `${r.to_number}-${r.to_item || '1'}` : r.internal_hu;
+      if (dbKeys.has(key)) return false;
+      const tVal = r[timeField];
+      if (!tVal) return false;
+      const time = new Date(tVal).getTime();
+      return time >= fromTime && time <= toTime;
+    }).map(r => ({
+      ...r,
+      category: r.delivery && likpData[r.delivery] ? likpData[r.delivery] : (r.category || 'Normal')
+    }));
+    return [...dbData, ...localOnly];
+  };
+
+  const pickingData = useMemo(() => mergeLocalData(dbPicking, localPicking, 'confirmed_at', 'tanum'), [dbPicking, localPicking, period, dateValue, likpData]);
+  const packingData = useMemo(() => mergeLocalData(dbPacking, localPacking, 'created_at', 'internal_hu'), [dbPacking, localPacking, period, dateValue, likpData]);
+  
+  const previousPickingData = useMemo(() => period === "all" ? [] : mergeLocalData(dbPrevPicking, localPicking, 'confirmed_at', 'tanum', getPreviousPeriodRange(period, dateValue).from), [dbPrevPicking, localPicking, period, dateValue, likpData]);
+  const previousPackingData = useMemo(() => period === "all" ? [] : mergeLocalData(dbPrevPacking, localPacking, 'created_at', 'internal_hu', getPreviousPeriodRange(period, dateValue).from), [dbPrevPacking, localPacking, period, dateValue, likpData]);
+
+  return { pickingData, packingData, previousPickingData, previousPackingData, compPicking, compPacking, loading };
+}
+
+export function aggregateToChartData(pickingData: PickingRecord[], packingData: PackingRecord[], period: Period, dateValue?: string) {
+  const initCounters = () => ({
+    picking: 0, packing: 0,
+    pickingNormal: 0, pickingExpress: 0, pickingOE: 0,
+    packingNormal: 0, packingExpress: 0, packingOE: 0,
+    pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>(),
   });
 
-  // Process packing data and determine shift based on time
-  enrichedPackingData.forEach(p => {
-    if (p.created_at) {
-      const slot = getSlot(p.created_at);
-      if (chartDataMap.has(slot)) {
-        chartDataMap.get(slot).packing += (p.quantity || 0);
-        chartDataMap.get(slot).packingHUsSet.add(p.internal_hu);
-        totalPacking += (p.quantity || 0);
-        globalPackingHUs.add(p.internal_hu);
-
-        // Determine shift and update shift-specific data
-        const hour = p.created_at.getHours();
-        if (hour >= 5 && hour < 14) {
-          chartDataMap.get(slot).morningPacking += p.quantity || 0;
-        } else {
-          chartDataMap.get(slot).eveningPacking += p.quantity || 0;
-        }
+  const processData = (map: Map<any, any>, extractKey: (d: any) => any) => {
+    pickingData.forEach(p => {
+      const key = extractKey(p.confirmed_at);
+      if (map.has(key)) {
+        const row = map.get(key);
+        row.picking += p.quantity;
+        const cat = p.category || 'Normal';
+        if (cat === 'Express') row.pickingExpress += p.quantity;
+        else if (cat === 'OE') row.pickingOE += p.quantity;
+        else row.pickingNormal += p.quantity;
+        row.pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
       }
-    }
-  });
+    });
+    packingData.forEach(p => {
+      if (!p.created_at) return;
+      const key = extractKey(p.created_at);
+      if (map.has(key)) {
+        const row = map.get(key);
+        row.packing += (p.quantity || 0);
+        const cat = p.category || 'Normal';
+        if (cat === 'Express') row.packingExpress += (p.quantity || 0);
+        else if (cat === 'OE') row.packingOE += (p.quantity || 0);
+        else row.packingNormal += (p.quantity || 0);
+        row.packingHUsSet.add(p.internal_hu);
+      }
+    });
+  };
 
-  const chartData = Array.from(chartDataMap.values()).map(d => ({
-    time: d.time,
-    fullTime: d.fullTime,
-    picking: d.picking,
-    packing: d.packing,
-    pickingTOs: d.pickingTOsSet.size,
-    packingHUs: d.packingHUsSet.size,
-    morningPicking: d.morningPicking,
-    morningPacking: d.morningPacking,
-    eveningPicking: d.eveningPicking,
-    eveningPacking: d.eveningPacking
-  })).filter(d => d.time !== "Mimo");
+  if (period === "day") {
+    const map = new Map<string, any>();
+    hourlySlots.forEach(slot => map.set(`${slot.start} - ${slot.end}`, { time: slot.start, fullTime: `${slot.start} - ${slot.end}`, ...initCounters() }));
+    processData(map, (d) => getSlot(d));
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+  }
+
+  if (period === "week") {
+    const days = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
+    const map = new Map<number, any>();
+    for (let i = 1; i <= 7; i++) map.set(i, { time: days[i-1], fullTime: days[i-1], ...initCounters() });
+    processData(map, (d) => { let day = new Date(d).getDay(); return day === 0 ? 7 : day; });
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+  }
+
+  if (period === "month") {
+    const { from } = getPeriodRange("month", dateValue);
+    const d = new Date(from);
+    const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const map = new Map<number, any>();
+    for (let i = 1; i <= daysInMonth; i++) map.set(i, { time: String(i), fullTime: `${i}.`, ...initCounters() });
+    processData(map, (d) => new Date(d).getDate());
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+  }
+
+  const map = new Map<string, any>();
+  processData(map, (d) => {
+    const key = new Date(d).toISOString().substring(0, 7);
+    if (!map.has(key)) map.set(key, { time: key.substring(5), fullTime: key, ...initCounters() });
+    return key;
+  });
+  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+}
+
+export function aggregateShiftStats(pickingData: PickingRecord[], packingData: PackingRecord[]) {
+  const initT = () => ({ pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>(), pickingNormal: 0, pickingExpress: 0, pickingOE: 0, packingNormal: 0, packingExpress: 0, packingOE: 0 });
+  const a = initT();
+  const b = initT();
+
+  pickingData.forEach(p => {
+    if (!p.confirmed_at) return;
+    const t = getShiftLabel(new Date(p.confirmed_at)) === "A" ? a : b;
+    t.pickingKs += p.quantity;
+    t.weight += (p.weight || 0);
+    t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
+    if (p.operator) t.operators.add(p.operator);
+    
+    const cat = p.category || 'Normal';
+    if (cat === 'Express') t.pickingExpress += p.quantity;
+    else if (cat === 'OE') t.pickingOE += p.quantity;
+    else t.pickingNormal += p.quantity;
+  });
+  
+  packingData.forEach(p => {
+    if (!p.created_at) return;
+    const t = getShiftLabel(new Date(p.created_at)) === "A" ? a : b;
+    t.packingKs += (p.quantity || 0);
+    t.weight += (p.weight || 0);
+    t.packingHUs.add(p.internal_hu);
+    if (p.operator) t.operators.add(p.operator);
+
+    const cat = p.category || 'Normal';
+    if (cat === 'Express') t.packingExpress += (p.quantity || 0);
+    else if (cat === 'OE') t.packingOE += (p.quantity || 0);
+    else t.packingNormal += (p.quantity || 0);
+  });
 
   return {
-    chartData,
-    totalPicking,
-    totalPacking,
-    totalPickingTOs: globalPickingTOs.size,
-    totalPackingHUs: globalPackingHUs.size,
-    pickingData: enrichedPickingData,
-    packingData: enrichedPackingData,
-    // Add method to get historical data for previous days
-    getPreviousDayData: async (daysAgo: number) => {
-      const date = new Date();
-      date.setDate(date.getDate() - daysAgo);
-      const dateStr = date.toISOString().split('T')[0];
-
-      // For now, return empty data structure. This will be implemented when we have actual data storage.
-      return {
-        date: dateStr,
-        morning: { picking: { quantity: 0, tos: 0 }, packing: { quantity: 0, hus: 0 } },
-        evening: { picking: { quantity: 0, tos: 0 }, packing: { quantity: 0, hus: 0 } },
-        total: { picking: 0, packing: 0 }
-      };
-    },
-
-    // Add method to get weekly data
-    getWeeklyData: async (weeksAgo: number) => {
-      const result = [];
-      const today = new Date();
-
-      // Calculate the start of the week (Monday)
-      const dayOfWeek = today.getDay();
-      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) - (weeksAgo * 7);
-      const monday = new Date(today.setDate(diff));
-
-      // Get data for each day of the week
-      for (let i = 0; i < 7; i++) {
-        const day = new Date(monday);
-        day.setDate(monday.getDate() + i);
-        const dateStr = day.toISOString().split('T')[0];
-
-        // For now, return empty data structure. This will be implemented when we have actual data storage.
-        result.push({
-          date: dateStr,
-          dayOfWeek: day.toLocaleDateString('cs-CZ', { weekday: 'short' }),
-          morning: { picking: { quantity: 0, tos: 0 }, packing: { quantity: 0, hus: 0 } },
-          evening: { picking: { quantity: 0, tos: 0 }, packing: { quantity: 0, hus: 0 } },
-          total: { picking: 0, packing: 0 }
-        });
-      }
-
-      return result;
-    },
-
-    // Add method to get monthly data
-    getMonthlyData: async (monthsAgo: number) => {
-      const result = [];
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = today.getMonth() - monthsAgo;
-
-      // Get the first day of the month
-      const firstDay = new Date(year, month, 1);
-      // Get the last day of the month
-      const lastDay = new Date(year, month + 1, 0);
-
-      // Iterate through each day of the month
-      for (let day = firstDay.getDate(); day <= lastDay.getDate(); day++) {
-        const date = new Date(year, month, day);
-        const dateStr = date.toISOString().split('T')[0];
-
-        // For now, return empty data structure. This will be implemented when we have actual data storage.
-        result.push({
-          date: dateStr,
-          dayOfWeek: date.toLocaleDateString('cs-CZ', { weekday: 'short' }),
-          morning: { picking: { quantity: 0, tos: 0 }, packing: { quantity: 0, hus: 0 } },
-          evening: { picking: { quantity: 0, tos: 0 }, packing: { quantity: 0, hus: 0 } },
-          total: { picking: 0, packing: 0 }
-        });
-      }
-
-      return result;
-    },
-
-    // Add method to compare with previous period
-    compareWithPreviousPeriod: async (period: 'day' | 'week' | 'month') => {
-      const currentData = {
-        totalPicking,
-        totalPacking,
-        totalPickingTOs: globalPickingTOs.size,
-        totalPackingHUs: globalPackingHUs.size
-      };
-
-      let previousData = {
-        totalPicking: 0,
-        totalPacking: 0,
-        totalPickingTOs: 0,
-        totalPackingHUs: 0
-      };
-
-      // For now, return empty previous data. This will be implemented when we have actual data storage.
-
-      return {
-        current: currentData,
-        previous: previousData,
-        difference: {
-          picking: currentData.totalPicking - previousData.totalPicking,
-          packing: currentData.totalPacking - previousData.totalPacking,
-          pickingTOs: currentData.totalPickingTOs - previousData.totalPickingTOs,
-          packingHUs: currentData.totalPackingHUs - previousData.totalPackingHUs
-        },
-        period
-      };
-    },
-
-    // Add method for predictive analytics
-    getPredictiveAnalytics: () => {
-      // Simple prediction based on current rate
-      // This will be enhanced when we have historical data
-
-      // Calculate hours worked so far today
-      const now = new Date();
-      const hoursWorked = (now.getHours() - 5) + (now.getMinutes() / 60); // Assuming shift starts at 5:45
-
-      // Calculate current rate per hour
-      const pickingRate = hoursWorked > 0 ? totalPicking / hoursWorked : 0;
-      const packingRate = hoursWorked > 0 ? totalPacking / hoursWorked : 0;
-
-      // Predict end-of-shift totals (assuming 16 hours from 5:45 to 21:45)
-      const predictedPicking = pickingRate * 16;
-      const predictedPacking = packingRate * 16;
-
-      return {
-        predictedPicking: Math.round(predictedPicking),
-        predictedPacking: Math.round(predictedPacking),
-        pickingRate: Number(pickingRate.toFixed(2)),
-        packingRate: Number(packingRate.toFixed(2)),
-        hoursWorked: Number(hoursWorked.toFixed(2)),
-        predictionConfidence: 'low' // Will be improved with historical data
-      };
-    }
+    a: { ...a, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, operators: a.operators.size },
+    b: { ...b, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, operators: b.operators.size },
   };
 }
