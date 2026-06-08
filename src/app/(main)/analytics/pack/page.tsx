@@ -17,7 +17,6 @@ export default function PackAnalyticsPage() {
   const [stats, setStats] = useState<PackStat[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // Datumový filtr
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -26,7 +25,7 @@ export default function PackAnalyticsPage() {
     setHasSearched(true);
     try {
       const params: Record<string, any> = {
-        p_search_term: term ?? searchTerm
+        p_search_term: (term ?? searchTerm).trim()
       };
       if (dateFrom) params.p_date_from = dateFrom;
       if (dateTo) params.p_date_to = dateTo;
@@ -48,7 +47,6 @@ export default function PackAnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Seskupit výsledky podle obalu pro lepší zobrazení (protože RPC vrací řádky pro obal+den)
   const groupedByMaterial = stats.reduce((acc, row) => {
     if (!acc[row.packaging_material]) {
       acc[row.packaging_material] = {
@@ -67,7 +65,6 @@ export default function PackAnalyticsPage() {
 
   const materials = Object.values(groupedByMaterial).sort((a, b) => b.total_hus - a.total_hus);
 
-  // BUG 5 FIX: Sanitizovat ID gradientu
   const sanitizeId = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '_');
 
   return (
@@ -84,7 +81,7 @@ export default function PackAnalyticsPage() {
         </div>
       </div>
 
-      {/* Vyhledávání + datumový filtr */}
+      {/* Vyhledávání + filtry */}
       <div className="glass-panel p-5 space-y-4">
         <div className="flex gap-4 items-center">
           <div className="relative flex-1">
@@ -107,7 +104,6 @@ export default function PackAnalyticsPage() {
           </button>
         </div>
 
-        {/* Datumový filtr */}
         <div className="flex gap-4 items-center flex-wrap">
           <Filter className="w-4 h-4 text-white/40" />
           <div className="flex items-center gap-2">
@@ -157,14 +153,13 @@ export default function PackAnalyticsPage() {
               <div key={mat.material || idx} className="glass-panel p-6 flex flex-col gap-6">
                 
                 <div className="flex justify-between items-center border-b border-white/5 pb-4">
-                  <h3 className="text-xl font-bold text-white">{mat.material}</h3>
+                  <h3 className="text-xl font-bold text-white font-mono">{mat.material}</h3>
                   <div className="bg-white/5 rounded-lg px-6 py-2 border border-white/5 text-center">
                     <p className="text-xs text-white/40 uppercase tracking-wider">Zabalených HU celkem</p>
                     <p className="text-2xl font-bold text-purple-400">{mat.total_hus.toLocaleString()}</p>
                   </div>
                 </div>
 
-                {/* Graf vývoje */}
                 <div className="w-full h-[250px] bg-white/[0.02] rounded-xl p-4 pt-6 border border-white/5 relative">
                   <h4 className="absolute top-4 left-4 text-xs font-semibold text-white/50 flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
@@ -180,7 +175,18 @@ export default function PackAnalyticsPage() {
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                        <XAxis dataKey="date" stroke="#ffffff40" fontSize={11} tickLine={false} axisLine={false} />
+                        <XAxis 
+                          dataKey="date" 
+                          stroke="#ffffff40" 
+                          fontSize={11} 
+                          tickLine={false} 
+                          axisLine={false}
+                          tickFormatter={(val) => {
+                            if (!val) return "";
+                            const d = new Date(val);
+                            return isNaN(d.getTime()) ? val : d.toLocaleDateString("cs-CZ", { day: "2-digit", month: "2-digit" });
+                          }}
+                        />
                         <YAxis stroke="#ffffff40" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
                         <Tooltip 
                           contentStyle={{ backgroundColor: '#1e1e2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
