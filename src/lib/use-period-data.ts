@@ -178,6 +178,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
     weight: Number(r.weight) || 0,
     confirmed_at: new Date(r.confirmed_at),
     delivery: r.delivery,
+    category: 'Normal' // Přidáno pro Type Safety
   }));
 
   const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
@@ -230,6 +231,7 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
       created_at: new Date(r.packed_at),
       material: material,
       delivery: r.delivery,
+      category: 'Normal' // Přidáno pro Type Safety
     };
   });
 
@@ -239,7 +241,6 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
   return mapped;
 }
 
-// UPRAVENÝ HOOK: Přidán likpData jako 7. argument
 export function usePeriodData(
   period: Period,
   localPicking: PickingRecord[],
