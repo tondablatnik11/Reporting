@@ -12,15 +12,13 @@ import {
 
 export type Period = "day" | "week" | "month" | "all";
 
-// Helper for parsing week format like "2026-W22"
 function getStartOfWeek(year: number, week: number) {
-  const d = new Date(year, 0, 4); // 4th of Jan is always in week 1
+  const d = new Date(year, 0, 4); 
   const day = d.getDay() || 7;
   d.setDate(d.getDate() - day + 1 + (week - 1) * 7);
   return d;
 }
 
-// Returns [from, to] ISO date strings based on period and specific date string
 export function getPeriodRange(period: Period, dateValue?: string): { from: string; to: string } {
   let from = new Date();
   let to = new Date();
@@ -28,7 +26,6 @@ export function getPeriodRange(period: Period, dateValue?: string): { from: stri
   if (period === "day") {
     if (dateValue) {
       from = new Date(dateValue);
-      // Fallback záchrana: Pokud přijde řetězec, ze kterého JS neumí postavit datum (např. 2026-W22), zabráníme pádu
       if (isNaN(from.getTime())) from = new Date(); 
     }
     from.setHours(0, 0, 0, 0);
@@ -52,7 +49,6 @@ export function getPeriodRange(period: Period, dateValue?: string): { from: stri
     to.setDate(to.getDate() + 6);
     to.setHours(23, 59, 59, 999);
   } else if (period === "month") {
-    // Obrana proti splitu nad formátem týdne, který sice má pomlčku, ale nejedná se o měsíc
     if (dateValue && dateValue.includes("-") && !dateValue.includes("W")) {
       const [y, m] = dateValue.split("-");
       from = new Date(Number(y), Number(m) - 1, 1, 0, 0, 0, 0);
@@ -67,10 +63,7 @@ export function getPeriodRange(period: Period, dateValue?: string): { from: stri
     from = new Date(2020, 0, 1);
   }
 
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  };
+  return { from: from.toISOString(), to: to.toISOString() };
 }
 
 export function getPreviousPeriodRange(period: Period, dateValue?: string): { from: string; to: string } {
@@ -80,7 +73,6 @@ export function getPreviousPeriodRange(period: Period, dateValue?: string): { fr
   if (period === "day") {
     if (dateValue) {
       from = new Date(dateValue);
-      // Fallback záchrana
       if (isNaN(from.getTime())) from = new Date();
     }
     from.setDate(from.getDate() - 1);
@@ -119,10 +111,33 @@ export function getPreviousPeriodRange(period: Period, dateValue?: string): { fr
     from = new Date(2020, 0, 1);
   }
 
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  };
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
+async function fetchCategoriesMap(deliveries: string[]): Promise<Record<string, string>> {
+  const uniqueDels = Array.from(new Set(deliveries.filter(d => !!d && d !== 'undefined')));
+  if (uniqueDels.length === 0) return {};
+  
+  const catMap: Record<string, string> = {};
+  const chunkSize = 200;
+  
+  for (let i = 0; i < uniqueDels.length; i += chunkSize) {
+    const chunk = uniqueDels.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from("likp_deliveries")
+      .select("delivery, shipping_point")
+      .in("delivery", chunk);
+      
+    if (!error && data) {
+      data.forEach(d => {
+        let cat = "Normal";
+        if (d.shipping_point === "FM21" || d.shipping_point === "FM22") cat = "Express";
+        else if (d.shipping_point === "FM24") cat = "OE";
+        catMap[d.delivery] = cat;
+      });
+    }
+  }
+  return catMap;
 }
 
 async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
@@ -134,7 +149,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
   while (hasMore) {
     const { data, error } = await supabase
       .from("ltap_picking")
-      .select("tanum, tapos, picker_sap_id, dest_target_qty, weight, confirmed_at")
+      .select("tanum, tapos, picker_sap_id, dest_target_qty, weight, confirmed_at, delivery")
       .gte("confirmed_at", from)
       .lte("confirmed_at", to)
       .not("picker_sap_id", "is", null)
@@ -155,14 +170,20 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
     }
   }
 
-  return allData.map((r: any) => ({
+  const mapped = allData.map((r: any) => ({
     to_number: r.tanum,
     to_item: r.tapos,
     operator: r.picker_sap_id || "",
-    quantity: r.dest_target_qty || 0,
-    weight: r.weight || 0,
+    quantity: Number(r.dest_target_qty) || 0,
+    weight: Number(r.weight) || 0,
     confirmed_at: new Date(r.confirmed_at),
+    delivery: r.delivery,
   }));
+
+  const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
+  mapped.forEach(m => { m.category = m.delivery ? (catMap[m.delivery] || 'Normal') : 'Normal'; });
+
+  return mapped;
 }
 
 async function fetchPackingFromDb(from: string, to: string): Promise<PackingRecord[]> {
@@ -174,7 +195,7 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
   while (hasMore) {
     const { data, error } = await supabase
       .from("vekp_packing_headers")
-      .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, vepo_packing_items(packed_quantity, material)")
+      .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, delivery, vepo_packing_items(packed_quantity, material)")
       .gte("packed_at", from)
       .lte("packed_at", to)
       .not("packer_sap_id", "is", null)
@@ -195,7 +216,7 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
     }
   }
 
-  return allData.map((r: any) => {
+  const mapped = allData.map((r: any) => {
     const vepoItems = Array.isArray(r.vepo_packing_items) ? r.vepo_packing_items : [];
     const totalQuantity = vepoItems.reduce((sum: number, item: any) => sum + (Number(item.packed_quantity) || 0), 0);
     const material = vepoItems.length > 0 ? vepoItems[0].material : r.packaging_material;
@@ -204,22 +225,29 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
       internal_hu: r.internal_hu_number,
       hu_number: r.handling_unit,
       operator: r.packer_sap_id || "",
-      weight: r.total_weight || 0,
+      weight: Number(r.total_weight) || 0,
       quantity: totalQuantity,
       created_at: new Date(r.packed_at),
       material: material,
+      delivery: r.delivery,
     };
   });
+
+  const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
+  mapped.forEach(m => { m.category = m.delivery ? (catMap[m.delivery] || 'Normal') : 'Normal'; });
+
+  return mapped;
 }
 
-// Rozšířený hook podporující porovnávací rozsah
+// UPRAVENÝ HOOK: Přidán likpData jako 7. argument
 export function usePeriodData(
   period: Period,
   localPicking: PickingRecord[],
   localPacking: PackingRecord[],
   dateValue?: string,
   isComparing?: boolean,
-  compareDateValue?: string
+  compareDateValue?: string,
+  likpData: Record<string, string> = {}
 ) {
   const [dbPicking, setDbPicking] = useState<PickingRecord[]>([]);
   const [dbPacking, setDbPacking] = useState<PackingRecord[]>([]);
@@ -271,126 +299,83 @@ export function usePeriodData(
     return () => { active = false; };
   }, [period, dateValue, isComparing, compareDateValue]);
 
-  const pickingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period, dateValue);
+  const mergeLocalData = (dbData: any[], localData: any[], timeField: string, idField: string, dateValueStr?: string) => {
+    const { from, to } = getPeriodRange(period, dateValueStr || dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
-
-    const dbKeys = new Set(dbPicking.map(r => `${r.to_number}-${r.to_item || '1'}`));
-    const localOnly = localPicking.filter(r => {
-      const key = `${r.to_number}-${r.to_item || '1'}`;
+    const dbKeys = new Set(dbData.map(r => idField === 'tanum' ? `${r.to_number}-${r.to_item || '1'}` : r.internal_hu));
+    
+    const localOnly = localData.filter(r => {
+      const key = idField === 'tanum' ? `${r.to_number}-${r.to_item || '1'}` : r.internal_hu;
       if (dbKeys.has(key)) return false;
-      if (!r.confirmed_at) return false;
-      const time = new Date(r.confirmed_at).getTime();
+      const tVal = r[timeField];
+      if (!tVal) return false;
+      const time = new Date(tVal).getTime();
       return time >= fromTime && time <= toTime;
-    });
-    return [...dbPicking, ...localOnly];
-  }, [dbPicking, localPicking, period, dateValue]);
+    }).map(r => ({
+      ...r,
+      category: r.delivery && likpData[r.delivery] ? likpData[r.delivery] : (r.category || 'Normal')
+    }));
+    return [...dbData, ...localOnly];
+  };
 
-  const packingData = useMemo(() => {
-    const { from, to } = getPeriodRange(period, dateValue);
-    const fromTime = new Date(from).getTime();
-    const toTime = new Date(to).getTime();
-
-    const dbKeys = new Set(dbPacking.map(r => r.internal_hu));
-    const localOnly = localPacking.filter(r => {
-      if (dbKeys.has(r.internal_hu)) return false;
-      if (!r.created_at) return false;
-      const time = new Date(r.created_at).getTime();
-      return time >= fromTime && time <= toTime;
-    });
-    return [...dbPacking, ...localOnly];
-  }, [dbPacking, localPacking, period, dateValue]);
-
-  const previousPickingData = useMemo(() => {
-    if (period === "all") return [];
-    const { from, to } = getPreviousPeriodRange(period, dateValue);
-    const fromTime = new Date(from).getTime();
-    const toTime = new Date(to).getTime();
-
-    const dbKeys = new Set(dbPrevPicking.map(r => `${r.to_number}-${r.to_item || '1'}`));
-    const localOnly = localPicking.filter(r => {
-      if (dbKeys.has(`${r.to_number}-${r.to_item || '1'}`)) return false;
-      if (!r.confirmed_at) return false;
-      const time = new Date(r.confirmed_at).getTime();
-      return time >= fromTime && time <= toTime;
-    });
-    return [...dbPrevPicking, ...localOnly];
-  }, [dbPrevPicking, localPicking, period, dateValue]);
-
-  const previousPackingData = useMemo(() => {
-    if (period === "all") return [];
-    const { from, to } = getPreviousPeriodRange(period, dateValue);
-    const fromTime = new Date(from).getTime();
-    const toTime = new Date(to).getTime();
-
-    const dbKeys = new Set(dbPrevPacking.map(r => r.internal_hu));
-    const localOnly = localPacking.filter(r => {
-      if (dbKeys.has(r.internal_hu)) return false;
-      if (!r.created_at) return false;
-      const time = new Date(r.created_at).getTime();
-      return time >= fromTime && time <= toTime;
-    });
-    return [...dbPrevPacking, ...localOnly];
-  }, [dbPrevPacking, localPacking, period, dateValue]);
+  const pickingData = useMemo(() => mergeLocalData(dbPicking, localPicking, 'confirmed_at', 'tanum'), [dbPicking, localPicking, period, dateValue, likpData]);
+  const packingData = useMemo(() => mergeLocalData(dbPacking, localPacking, 'created_at', 'internal_hu'), [dbPacking, localPacking, period, dateValue, likpData]);
+  
+  const previousPickingData = useMemo(() => period === "all" ? [] : mergeLocalData(dbPrevPicking, localPicking, 'confirmed_at', 'tanum', getPreviousPeriodRange(period, dateValue).from), [dbPrevPicking, localPicking, period, dateValue, likpData]);
+  const previousPackingData = useMemo(() => period === "all" ? [] : mergeLocalData(dbPrevPacking, localPacking, 'created_at', 'internal_hu', getPreviousPeriodRange(period, dateValue).from), [dbPrevPacking, localPacking, period, dateValue, likpData]);
 
   return { pickingData, packingData, previousPickingData, previousPackingData, compPicking, compPacking, loading };
 }
 
 export function aggregateToChartData(pickingData: PickingRecord[], packingData: PackingRecord[], period: Period, dateValue?: string) {
-  if (period === "day") {
-    const chartDataMap = new Map<string, any>();
-    hourlySlots.forEach(slot => {
-      chartDataMap.set(`${slot.start} - ${slot.end}`, {
-        time: slot.start, fullTime: `${slot.start} - ${slot.end}`, picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>(),
-      });
-    });
+  const initCounters = () => ({
+    picking: 0, packing: 0,
+    pickingNormal: 0, pickingExpress: 0, pickingOE: 0,
+    packingNormal: 0, packingExpress: 0, packingOE: 0,
+    pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>(),
+  });
 
+  const processData = (map: Map<any, any>, extractKey: (d: any) => any) => {
     pickingData.forEach(p => {
-      const slot = getSlot(p.confirmed_at);
-      if (chartDataMap.has(slot)) {
-        chartDataMap.get(slot).picking += p.quantity;
-        chartDataMap.get(slot).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
+      const key = extractKey(p.confirmed_at);
+      if (map.has(key)) {
+        const row = map.get(key);
+        row.picking += p.quantity;
+        const cat = p.category || 'Normal';
+        if (cat === 'Express') row.pickingExpress += p.quantity;
+        else if (cat === 'OE') row.pickingOE += p.quantity;
+        else row.pickingNormal += p.quantity;
+        row.pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
       }
     });
     packingData.forEach(p => {
-      if (p.created_at) {
-        const slot = getSlot(p.created_at);
-        if (chartDataMap.has(slot)) {
-          chartDataMap.get(slot).packing += (p.quantity || 0);
-          chartDataMap.get(slot).packingHUsSet.add(p.internal_hu);
-        }
+      if (!p.created_at) return;
+      const key = extractKey(p.created_at);
+      if (map.has(key)) {
+        const row = map.get(key);
+        row.packing += (p.quantity || 0);
+        const cat = p.category || 'Normal';
+        if (cat === 'Express') row.packingExpress += (p.quantity || 0);
+        else if (cat === 'OE') row.packingOE += (p.quantity || 0);
+        else row.packingNormal += (p.quantity || 0);
+        row.packingHUsSet.add(p.internal_hu);
       }
     });
+  };
 
-    return Array.from(chartDataMap.values()).map(d => ({
-      time: d.time, fullTime: d.fullTime, picking: d.picking, packing: d.packing, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size,
-    }));
+  if (period === "day") {
+    const map = new Map<string, any>();
+    hourlySlots.forEach(slot => map.set(`${slot.start} - ${slot.end}`, { time: slot.start, fullTime: `${slot.start} - ${slot.end}`, ...initCounters() }));
+    processData(map, (d) => getSlot(d));
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
   }
 
   if (period === "week") {
     const days = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
     const map = new Map<number, any>();
-    for (let i = 1; i <= 7; i++) {
-      map.set(i, { time: days[i-1], fullTime: days[i-1], picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>() });
-    }
-    pickingData.forEach(p => {
-      let d = new Date(p.confirmed_at).getDay();
-      d = d === 0 ? 7 : d; // 1 = Monday, 7 = Sunday
-      if (map.has(d)) {
-        map.get(d).picking += p.quantity;
-        map.get(d).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
-      }
-    });
-    packingData.forEach(p => {
-      if (!p.created_at) return;
-      let d = new Date(p.created_at).getDay();
-      d = d === 0 ? 7 : d;
-      if (map.has(d)) {
-        map.get(d).packing += (p.quantity || 0);
-        map.get(d).packingHUsSet.add(p.internal_hu);
-      }
-    });
+    for (let i = 1; i <= 7; i++) map.set(i, { time: days[i-1], fullTime: days[i-1], ...initCounters() });
+    processData(map, (d) => { let day = new Date(d).getDay(); return day === 0 ? 7 : day; });
     return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
   }
 
@@ -399,74 +384,55 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     const d = new Date(from);
     const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
     const map = new Map<number, any>();
-    for (let i = 1; i <= daysInMonth; i++) {
-      map.set(i, { time: String(i), fullTime: `${i}.`, picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>() });
-    }
-    pickingData.forEach(p => {
-      const d = new Date(p.confirmed_at).getDate();
-      if (map.has(d)) {
-        map.get(d).picking += p.quantity;
-        map.get(d).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
-      }
-    });
-    packingData.forEach(p => {
-      if (!p.created_at) return;
-      const d = new Date(p.created_at).getDate();
-      if (map.has(d)) {
-        map.get(d).packing += (p.quantity || 0);
-        map.get(d).packingHUsSet.add(p.internal_hu);
-      }
-    });
+    for (let i = 1; i <= daysInMonth; i++) map.set(i, { time: String(i), fullTime: `${i}.`, ...initCounters() });
+    processData(map, (d) => new Date(d).getDate());
     return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
   }
 
-  // "all" - group by month (YYYY-MM)
   const map = new Map<string, any>();
-  pickingData.forEach(p => {
-    const key = new Date(p.confirmed_at).toISOString().substring(0, 7);
-    if (!map.has(key)) map.set(key, { time: key.substring(5), fullTime: key, picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>() });
-    map.get(key).picking += p.quantity;
-    map.get(key).pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
+  processData(map, (d) => {
+    const key = new Date(d).toISOString().substring(0, 7);
+    if (!map.has(key)) map.set(key, { time: key.substring(5), fullTime: key, ...initCounters() });
+    return key;
   });
-  packingData.forEach(p => {
-    if (!p.created_at) return;
-    const key = new Date(p.created_at).toISOString().substring(0, 7);
-    if (!map.has(key)) map.set(key, { time: key.substring(5), fullTime: key, picking: 0, packing: 0, pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>() });
-    map.get(key).packing += (p.quantity || 0);
-    map.get(key).packingHUsSet.add(p.internal_hu);
-  });
-  return Array.from(map.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
+  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
 }
 
-// Chybějící funkce, kterou využívá stránka "shift-comparison" (nyní včetně váhy u pickingu)
 export function aggregateShiftStats(pickingData: PickingRecord[], packingData: PackingRecord[]) {
-  const a = { pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>() };
-  const b = { pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>() };
+  const initT = () => ({ pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>(), pickingNormal: 0, pickingExpress: 0, pickingOE: 0, packingNormal: 0, packingExpress: 0, packingOE: 0 });
+  const a = initT();
+  const b = initT();
 
   pickingData.forEach(p => {
     if (!p.confirmed_at) return;
-    const shift = getShiftLabel(new Date(p.confirmed_at));
-    const t = shift === "A" ? a : b;
+    const t = getShiftLabel(new Date(p.confirmed_at)) === "A" ? a : b;
     t.pickingKs += p.quantity;
-    t.weight += (p.weight || 0); // Vylepšení: počítáme váhu i u pickingu
+    t.weight += (p.weight || 0);
     t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
     if (p.operator) t.operators.add(p.operator);
+    
+    const cat = p.category || 'Normal';
+    if (cat === 'Express') t.pickingExpress += p.quantity;
+    else if (cat === 'OE') t.pickingOE += p.quantity;
+    else t.pickingNormal += p.quantity;
   });
   
   packingData.forEach(p => {
     if (!p.created_at) return;
-    const shift = getShiftLabel(new Date(p.created_at));
-    const t = shift === "A" ? a : b;
+    const t = getShiftLabel(new Date(p.created_at)) === "A" ? a : b;
     t.packingKs += (p.quantity || 0);
     t.weight += (p.weight || 0);
     t.packingHUs.add(p.internal_hu);
     if (p.operator) t.operators.add(p.operator);
+
+    const cat = p.category || 'Normal';
+    if (cat === 'Express') t.packingExpress += (p.quantity || 0);
+    else if (cat === 'OE') t.packingOE += (p.quantity || 0);
+    else t.packingNormal += (p.quantity || 0);
   });
 
   return {
-    a: { pickingKs: a.pickingKs, packingKs: a.packingKs, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, weight: a.weight, operators: a.operators.size },
-    b: { pickingKs: b.pickingKs, packingKs: b.packingKs, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, weight: b.weight, operators: b.operators.size },
+    a: { ...a, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, operators: a.operators.size },
+    b: { ...b, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, operators: b.operators.size },
   };
 }
