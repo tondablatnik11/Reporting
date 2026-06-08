@@ -128,6 +128,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [packingData, setPackingData] = useState<PackingRecord[]>([]);
   const [likpData, setLikpData] = useState<Record<string, string>>({});
 
+  useEffect(() => {
+    import("@/lib/supabase").then(({ supabase }) => {
+      supabase.from('app_settings').select('*').in('key', ['shifts', 'targets', 'operators']).then(({ data }) => {
+        data?.forEach(row => {
+          localStorage.setItem(`hellmann_${row.key}`, JSON.stringify(row.value));
+        });
+      });
+    });
+  }, []);
+
   const addLikpData = (data: {delivery: string, shipping_point: string, carrier?: string}[]) => {
     setLikpData(prev => {
       const next = { ...prev };
@@ -379,7 +389,7 @@ export function useAggregatedData() {
 
     compareWithPreviousPeriod: async (period: 'day' | 'week' | 'month') => {
       const currentData = { totalPicking, totalPacking, totalPickingTOs: globalPickingTOs.size, totalPackingHUs: globalPackingHUs.size };
-      let previousData = { totalPicking: 0, totalPacking: 0, totalPickingTOs: 0, totalPackingHUs: 0 };
+      const previousData = { totalPicking: 0, totalPacking: 0, totalPickingTOs: 0, totalPackingHUs: 0 };
 
       return {
         current: currentData,

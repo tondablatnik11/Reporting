@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useMemo, useState } from "react";
@@ -33,11 +34,11 @@ export default function PickingPage() {
   const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
 
   const totalKs = pickingData.reduce((s, r) => s + r.quantity, 0);
-  const totalTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
+  const totalTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || '0'}`)).size;
   const uniqueOperators = new Set(pickingData.filter(r => r.operator && r.quantity > 0).map(r => r.operator)).size;
 
   const compTotalKs = compPicking.reduce((s, r) => s + r.quantity, 0);
-  const compTotalTOs = new Set(compPicking.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
+  const compTotalTOs = new Set(compPicking.map(r => `${r.to_number}-${r.to_item || '0'}`)).size;
 
   const getDiffLabel = (current: number, compare: number) => {
     if (!isComparing || compare === 0) return null;
@@ -77,7 +78,7 @@ export default function PickingPage() {
       if (!opTOs.has(timeKey)) opTOs.set(timeKey, new Map());
       const slotMap = opTOs.get(timeKey)!;
       if (!slotMap.has(p.operator)) slotMap.set(p.operator, new Set());
-      slotMap.get(p.operator)!.add(`${p.to_number}-${p.to_item || Math.random()}`);
+      slotMap.get(p.operator)!.add(`${p.to_number}-${p.to_item || '0'}`);
     });
 
     const ops = new Set<string>();

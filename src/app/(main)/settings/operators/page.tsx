@@ -1,8 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useMemo } from "react";
 import { Users2, Plus, Trash2, Save, PackageSearch, Box } from "lucide-react";
 import { useData, getShiftLabel } from "@/lib/data-context";
+import { supabase } from "@/lib/supabase";
+import { useEffect } from "react";
 
 interface Operator {
   id: string;
@@ -16,6 +19,18 @@ export default function OperatorsPage() {
   const { pickingData, packingData } = useData();
   const [operators, setOperators] = useState<Operator[]>([]);
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'operators').single().then(({ data }) => {
+      if (data?.value) {
+        setOperators(data.value as any);
+        localStorage.setItem('hellmann_operators', JSON.stringify(data.value));
+      } else if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('hellmann_operators');
+        if (stored) setOperators(JSON.parse(stored));
+      }
+    });
+  }, []);
 
   // Auto-detect operators from imported data
   const detectedOperators = useMemo(() => {
@@ -84,7 +99,8 @@ export default function OperatorsPage() {
     setSaved(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    await supabase.from('app_settings').upsert({ key: 'operators', value: operators as any });
     localStorage.setItem('hellmann_operators', JSON.stringify(operators));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);

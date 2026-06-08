@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useMemo } from "react";
 import { ComposedChart, Area, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { PickingRecord, PackingRecord, getShiftLabel, hourlySlots, getSlot } from "@/lib/data-context";
@@ -25,7 +26,7 @@ export default function PdfReportTemplate({ pickingData, packingData, chartData,
 
   pickingData.forEach(p => {
     totalPicking += p.quantity;
-    globalPickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
+    globalPickingTOs.add(`${p.to_number}-${p.to_item || '0'}`);
   });
   packingData.forEach(p => {
     if (p.created_at) {
@@ -48,7 +49,7 @@ export default function PdfReportTemplate({ pickingData, packingData, chartData,
       if (!r.confirmed_at) return;
       const shift = getShiftLabel(r.confirmed_at);
       stats[shift].pickKs += r.quantity;
-      stats[shift].pickTOs.add(`${r.to_number}-${r.to_item || Math.random()}`);
+      stats[shift].pickTOs.add(`${r.to_number}-${r.to_item || '0'}`);
     });
     packingData.forEach(r => {
       if (!r.created_at) return;
@@ -76,7 +77,7 @@ export default function PdfReportTemplate({ pickingData, packingData, chartData,
       if (!opTOs.has(timeKey)) opTOs.set(timeKey, new Map());
       const slotMap = opTOs.get(timeKey)!;
       if (!slotMap.has(p.operator)) slotMap.set(p.operator, new Set());
-      slotMap.get(p.operator)!.add(`${p.to_number}-${p.to_item || Math.random()}`);
+      slotMap.get(p.operator)!.add(`${p.to_number}-${p.to_item || '0'}`);
     });
     const ops = new Set<string>();
     opTOs.forEach((slotMap, timeKey) => {

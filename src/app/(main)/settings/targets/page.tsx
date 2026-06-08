@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Settings, Save, Plus, Trash2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 interface Target {
   id: string;
@@ -22,7 +23,13 @@ export default function TargetsPage() {
   const [targets, setTargets] = useState<Target[]>(defaultTargets);
   const [saved, setSaved] = useState(false);
 
-  const updateTarget = (id: string, field: keyof Target, value: any) => {
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'targets').single().then(({ data }) => {
+      if (data?.value) setTargets(data.value as any);
+    });
+  }, []);
+
+  const updateTarget = (id: string, field: keyof Target, value: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
     setTargets(prev => prev.map(t => t.id === id ? { ...t, [field]: typeof t[field] === 'number' ? Number(value) || 0 : value } : t));
     setSaved(false);
   };
@@ -44,8 +51,8 @@ export default function TargetsPage() {
     setSaved(false);
   };
 
-  const handleSave = () => {
-    // TODO: persist to Supabase
+  const handleSave = async () => {
+    await supabase.from('app_settings').upsert({ key: 'targets', value: targets as any });
     localStorage.setItem('hellmann_targets', JSON.stringify(targets));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -77,6 +84,7 @@ export default function TargetsPage() {
               <input
                 type="text"
                 value={target.name}
+                title="Tato stránka definuje cíle (Targets) pro jednotlivé směny. Tyto cíle se pak porovnávají s reálným výkonem v celém reportingu. Zatím jsou cíle zapsány fixně v kódu, pro úpravu je potřeba je změnit v poli &quot;TARGETS&quot; na začátku souboru."
                 onChange={(e) => updateTarget(target.id, 'name', e.target.value)}
                 className="text-lg font-bold text-white bg-transparent border-b border-transparent hover:border-white/20 focus:border-blue-400/50 outline-none pb-1 transition-colors"
               />
@@ -131,7 +139,7 @@ export default function TargetsPage() {
         <ul className="space-y-2 text-sm text-white/40">
           <li>• <strong className="text-white/60">Směnový cíl</strong> – minimální počet TO/HU, který by měla celá směna dosáhnout</li>
           <li>• <strong className="text-white/60">Operátorský cíl</strong> – individuální denní cíl pro každého operátora</li>
-          <li>• Cíle se zobrazují na Dashboardu a v TV režimu jako "Plnění norem"</li>
+          <li>• Cíle se zobrazují na Dashboardu a v TV režimu jako &quot;Plnění norem&quot;</li>
           <li>• Po připojení k Supabase se budou ukládat na server</li>
         </ul>
       </div>

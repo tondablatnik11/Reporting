@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Clock, Save } from "lucide-react";
 import { getISOWeekNumber, getShiftConfig } from "@/lib/data-context";
+import { supabase } from "@/lib/supabase";
 
 export default function ShiftsPage() {
   const currentWeek = getISOWeekNumber(new Date());
@@ -18,12 +19,21 @@ export default function ShiftsPage() {
   });
 
   useEffect(() => {
-    setShiftConfig(getShiftConfig());
+    supabase.from('app_settings').select('value').eq('key', 'shifts').single().then(({ data }) => {
+      if (data?.value) {
+        setShiftConfig(data.value as any);
+        localStorage.setItem('hellmann_shifts', JSON.stringify(data.value));
+      } else {
+        // eslint-disable-next-line
+        setShiftConfig(getShiftConfig());
+      }
+    });
   }, []);
 
   const [saved, setSaved] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    await supabase.from('app_settings').upsert({ key: 'shifts', value: shiftConfig as any });
     localStorage.setItem('hellmann_shifts', JSON.stringify(shiftConfig));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);

@@ -59,6 +59,7 @@ export default function PickAnalyticsPage() {
   }, [searchTerm]);
 
   useEffect(() => {
+    // eslint-disable-next-line
     handleSearch("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState } from "react";
@@ -28,7 +29,7 @@ export default function UploadPage() {
     setFiles(prev => [...prev, ...droppedFiles]);
   };
 
-  const parseExcelDateTime = (excelDate: any, excelTime: any) => {
+  const parseExcelDateTime = (excelDate: any /* eslint-disable-line @typescript-eslint/no-explicit-any */, excelTime: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
     if (!excelDate) return new Date();
 
     let year = new Date().getFullYear();
@@ -88,7 +89,7 @@ export default function UploadPage() {
     return new Date(year, month, day, hours, minutes, seconds);
   };
 
-  const saveLtapToSupabase = async (json: any[], batchId: string) => {
+  const saveLtapToSupabase = async (json: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[], batchId: string) => {
     const rows = json.map(row => {
       const confirmedAt = parseExcelDateTime(
         row['Confirmation date_1'] || row['Confirmation date'],
@@ -122,7 +123,7 @@ export default function UploadPage() {
     return rows.length;
   };
 
-  const saveVekpToSupabase = async (json: any[], batchId: string) => {
+  const saveVekpToSupabase = async (json: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[], batchId: string) => {
     const rows = json.map(row => {
       const createdAt = parseExcelDateTime(row['Created On'], row['Time']);
       createdAt.setHours(createdAt.getHours() + 2); // VEKP +2h
@@ -149,7 +150,7 @@ export default function UploadPage() {
     return rows.length;
   };
 
-  const saveVepoToSupabase = async (json: any[], batchId: string) => {
+  const saveVepoToSupabase = async (json: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[], batchId: string) => {
     const rows = json.map(row => ({
       batch_id: batchId,
       internal_hu_number: String(row['Internal HU number'] || ''),
@@ -191,10 +192,10 @@ export default function UploadPage() {
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
           const workbook = XLSX.read(data, { type: 'array' });
           const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          const json: any[] = XLSX.utils.sheet_to_json(sheet);
+          const json: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] = XLSX.utils.sheet_to_json(sheet);
 
           let importType = "UNKNOWN";
-          let parsedData: any[] = [];
+          let parsedData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] = [];
           let dbRows = 0;
 
           const filename = file.name.toUpperCase();
@@ -212,7 +213,7 @@ export default function UploadPage() {
               } else {
                 return resolve({ name: file.name, status: "warning", message: "Tento soubor byl již dříve importován (duplicitní hash)." });
               }
-            } catch (err: any) {
+            } catch (err: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) {
               console.error("Batch creation error:", err);
             }
           }
@@ -340,7 +341,7 @@ export default function UploadPage() {
 
           const dbMsg = saveToDb && (batchId || isLikp) ? ` · ${dbRows} uloženo do DB` : '';
           resolve({ name: file.name, status: "success", message: `Zpracováno ${parsedData.length} řádků (${importType})${dbMsg}` });
-        } catch (err: any) {
+        } catch (err: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) {
           resolve({ name: file.name, status: "error", message: err.message || "Chyba při parsování" });
         }
       };

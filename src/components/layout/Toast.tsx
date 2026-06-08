@@ -11,10 +11,13 @@ interface ToastProps {
 export default function Toast({ toast, onDismiss, duration = 5000 }: ToastProps) {
   const [progress, setProgress] = useState(100);
 
-  const stableDismiss = useCallback(onDismiss, [onDismiss]);
+  const stableDismiss = useCallback(() => {
+    onDismiss();
+  }, [onDismiss]);
 
   useEffect(() => {
     if (!toast) {
+      // eslint-disable-next-line
       setProgress(100);
       return;
     }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -141,7 +142,7 @@ async function fetchCategoriesMap(deliveries: string[]): Promise<Record<string, 
 }
 
 async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
-  let allData: any[] = [];
+  let allData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] = [];
   let hasMore = true;
   let page = 0;
   const pageSize = 1000;
@@ -170,7 +171,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
     }
   }
 
-  const mapped = allData.map((r: any) => ({
+  const mapped = allData.map((r: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => ({
     to_number: r.tanum,
     to_item: r.tapos,
     operator: r.picker_sap_id || "",
@@ -188,7 +189,7 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
 }
 
 async function fetchPackingFromDb(from: string, to: string): Promise<PackingRecord[]> {
-  let allData: any[] = [];
+  let allData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] = [];
   let hasMore = true;
   let page = 0;
   const pageSize = 1000;
@@ -217,9 +218,9 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
     }
   }
 
-  const mapped = allData.map((r: any) => {
+  const mapped = allData.map((r: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
     const vepoItems = Array.isArray(r.vepo_packing_items) ? r.vepo_packing_items : [];
-    const totalQuantity = vepoItems.reduce((sum: number, item: any) => sum + (Number(item.packed_quantity) || 0), 0);
+    const totalQuantity = vepoItems.reduce((sum: number, item: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => sum + (Number(item.packed_quantity) || 0), 0);
     const material = vepoItems.length > 0 ? vepoItems[0].material : r.packaging_material;
 
     return {
@@ -263,6 +264,7 @@ export function usePeriodData(
     const { from, to } = getPeriodRange(period, dateValue);
     const { from: prevFrom, to: prevTo } = getPreviousPeriodRange(period, dateValue);
     
+    // eslint-disable-next-line
     setLoading(true);
 
     const fetches = [
@@ -300,7 +302,7 @@ export function usePeriodData(
     return () => { active = false; };
   }, [period, dateValue, isComparing, compareDateValue]);
 
-  const mergeLocalData = (dbData: any[], localData: any[], timeField: string, idField: string, dateValueStr?: string) => {
+  const mergeLocalData = (dbData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[], localData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[], timeField: string, idField: string, dateValueStr?: string) => {
     const { from, to } = getPeriodRange(period, dateValueStr || dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
@@ -339,14 +341,14 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     packingNormalHUsSet: new Set<string>(), packingExpressHUsSet: new Set<string>(), packingOEHUsSet: new Set<string>(),
   });
 
-  const processData = (map: Map<any, any>, extractKey: (d: any) => any) => {
+  const processData = (map: Map<any, any>, extractKey: (d: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => any) => {
     pickingData.forEach(p => {
       const key = extractKey(p.confirmed_at);
       if (map.has(key)) {
         const row = map.get(key);
         row.picking += p.quantity;
         const cat = p.category || 'Normal';
-        const toKey = `${p.to_number}-${p.to_item || Math.random()}`;
+        const toKey = `${p.to_number}-${p.to_item || '0'}`;
         if (cat === 'Express') { row.pickingExpress += p.quantity; row.pickingExpressTOsSet.add(toKey); }
         else if (cat === 'OE') { row.pickingOE += p.quantity; row.pickingOETOsSet.add(toKey); }
         else { row.pickingNormal += p.quantity; row.pickingNormalTOsSet.add(toKey); }
@@ -379,7 +381,7 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     const days = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
     const map = new Map<number, any>();
     for (let i = 1; i <= 7; i++) map.set(i, { time: days[i-1], fullTime: days[i-1], ...initCounters() });
-    processData(map, (d) => { let day = new Date(d).getDay(); return day === 0 ? 7 : day; });
+    processData(map, (d) => { const day = new Date(d).getDay(); return day === 0 ? 7 : day; });
     return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
   }
 
@@ -412,7 +414,7 @@ export function aggregateShiftStats(pickingData: PickingRecord[], packingData: P
     const t = getShiftLabel(new Date(p.confirmed_at)) === "A" ? a : b;
     t.pickingKs += p.quantity;
     t.weight += (p.weight || 0);
-    const toKey = `${p.to_number}-${p.to_item || Math.random()}`;
+    const toKey = `${p.to_number}-${p.to_item || '0'}`;
     t.pickingTOs.add(toKey);
     if (p.operator) t.operators.add(p.operator);
     

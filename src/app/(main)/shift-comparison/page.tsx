@@ -36,7 +36,7 @@ export default function ShiftComparisonPage() {
       const shift = getShiftLabel(new Date(p.confirmed_at));
       const t = shift === "A" ? sAP : sBP;
       if (!t.has(slot)) t.set(slot, new Set());
-      t.get(slot)!.add(`${p.to_number}-${p.to_item || Math.random()}`);
+      t.get(slot)!.add(`${p.to_number}-${p.to_item || '0'}`);
     });
     packingData.forEach(p => {
       if (!p.created_at) return;

@@ -16,7 +16,7 @@ export default function HourlyTrendPage() {
 
   const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
 
-  const totalPickingTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
+  const totalPickingTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || '0'}`)).size;
   const totalPicking = pickingData.reduce((s, r) => s + r.quantity, 0);
   const totalPackingHUs = new Set(packingData.map(r => r.internal_hu)).size;
   const totalPacking = packingData.reduce((s, r) => s + (r.quantity || 0), 0);
@@ -30,7 +30,7 @@ export default function HourlyTrendPage() {
       const shift = getShiftLabel(new Date(p.confirmed_at));
       const t = shift === "A" ? a : b;
       t.pickingKs += p.quantity;
-      t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
+      t.pickingTOs.add(`${p.to_number}-${p.to_item || '0'}`);
       if (p.operator) t.operators.add(p.operator);
     });
     packingData.forEach(p => {

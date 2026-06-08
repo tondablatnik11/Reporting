@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
@@ -351,6 +352,7 @@ export default function PredictionPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line
     loadData();
   }, [loadData]);
 

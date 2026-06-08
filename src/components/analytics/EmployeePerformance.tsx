@@ -5,6 +5,38 @@ import { useData } from "@/lib/data-context";
 import { PickingRecord, PackingRecord } from "@/lib/data-context";
 import { PackageSearch, Box, Users, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
+interface SortIconProps {
+  col: string;
+  sortCol: string;
+  sortDir: "asc" | "desc";
+}
+
+const SortIcon = ({ col, sortCol, sortDir }: SortIconProps) => {
+  if (sortCol !== col) return <ArrowUpDown className="w-3 h-3 opacity-20 group-hover:opacity-100 transition-opacity" />;
+  return sortDir === "asc" ? <ArrowUp className="w-3 h-3 text-white" /> : <ArrowDown className="w-3 h-3 text-white" />;
+};
+
+interface ThProps {
+  id: string;
+  label: string;
+  align?: "left" | "right";
+  sortCol: string;
+  sortDir: "asc" | "desc";
+  onSort: (col: string) => void;
+}
+
+const Th = ({ id, label, align = "left", sortCol, sortDir, onSort }: ThProps) => (
+  <th 
+    onClick={() => onSort(id)} 
+    className={`px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider cursor-pointer group hover:bg-white/5 transition-colors ${align === "right" ? "text-right" : "text-left"}`}
+  >
+    <div className={`flex items-center gap-1.5 ${align === "right" ? "justify-end" : ""}`}>
+      {label} <SortIcon col={id} sortCol={sortCol} sortDir={sortDir} />
+    </div>
+  </th>
+);
+
+
 interface EmployeePerformanceProps {
   filterType?: "all" | "picking" | "packing";
   pickingData?: PickingRecord[];
@@ -147,7 +179,7 @@ export default function EmployeePerformance({
       return s.pickingTOs > 0 || s.packingHUs > 0;
     });
 
-    return filtered.sort((a: any, b: any) => {
+    return filtered.sort((a: any, b: any) /* eslint-disable-line @typescript-eslint/no-explicit-any */ => {
       let valA = a[sortCol];
       let valB = b[sortCol];
 
@@ -188,21 +220,6 @@ export default function EmployeePerformance({
     );
   }
 
-  const SortIcon = ({ col }: { col: string }) => {
-    if (sortCol !== col) return <ArrowUpDown className="w-3 h-3 opacity-20 group-hover:opacity-100 transition-opacity" />;
-    return sortDir === "asc" ? <ArrowUp className="w-3 h-3 text-white" /> : <ArrowDown className="w-3 h-3 text-white" />;
-  };
-
-  const Th = ({ id, label, align = "left" }: { id: string, label: string, align?: "left" | "right" }) => (
-    <th 
-      onClick={() => handleSort(id)} 
-      className={`px-5 py-3.5 text-xs font-semibold text-white/40 uppercase tracking-wider cursor-pointer group hover:bg-white/5 transition-colors ${align === "right" ? "text-right" : "text-left"}`}
-    >
-      <div className={`flex items-center gap-1.5 ${align === "right" ? "justify-end" : ""}`}>
-        {label} <SortIcon col={id} />
-      </div>
-    </th>
-  );
 
   return (
     <div className="glass-panel overflow-hidden">
@@ -217,40 +234,40 @@ export default function EmployeePerformance({
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-white/5 bg-white/[0.02]">
-              <Th id="operator" label="Operátor" />
-              <Th id="shiftLabel" label="Směna" />
+              <Th id="operator" label="Operátor"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+              <Th id="shiftLabel" label="Směna"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
               
               {filterType === "all" && (
                 <>
-                  <Th id="pickingTOs" label="Picking (TO)" align="right" />
-                  <Th id="pickingKs" label="Picking (Ks)" align="right" />
-                  <Th id="packingHUs" label="Packing (HU)" align="right" />
-                  <Th id="packingKs" label="Packing (Ks)" align="right" />
-                  <Th id="weight" label="Váha (kg)" align="right" />
-                  <Th id="totalKs" label="Celkem (Ks)" align="right" />
+                  <Th id="pickingTOs" label="Picking (TO)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="pickingKs" label="Picking (Ks)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="packingHUs" label="Packing (HU)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="packingKs" label="Packing (Ks)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="weight" label="Váha (kg)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="totalKs" label="Celkem (Ks)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 </>
               )}
 
               {filterType === "picking" && (
                 <>
-                  <Th id="pickingTOs" label="Vypickované TO" align="right" />
-                  <Th id="pickCatStats.Normal" label="Normal TO" align="right" />
-                  <Th id="pickCatStats.Express" label="Express TO" align="right" />
-                  <Th id="pickCatStats.OE" label="OE TO" align="right" />
-                  <Th id="queueStats.PI_PA" label="Z toho Balíky (PI_PA)" align="right" />
-                  <Th id="queueStats.PI_PL" label="Z toho Palety (PI_PL)" align="right" />
-                  <Th id="avgKs" label="Průměr Ks / TO" align="right" />
+                  <Th id="pickingTOs" label="Vypickované TO" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="pickCatStats.Normal" label="Normal TO" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="pickCatStats.Express" label="Express TO" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="pickCatStats.OE" label="OE TO" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="queueStats.PI_PA" label="Z toho Balíky (PI_PA)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="queueStats.PI_PL" label="Z toho Palety (PI_PL)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="avgKs" label="Průměr Ks / TO" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 </>
               )}
 
               {filterType === "packing" && (
                 <>
-                  <Th id="packingHUs" label="Zabalené HU" align="right" />
-                  <Th id="packCatStats.Normal" label="Normal HU" align="right" />
-                  <Th id="packCatStats.Express" label="Express HU" align="right" />
-                  <Th id="packCatStats.OE" label="OE HU" align="right" />
-                  <Th id="packingKs" label="Celkem Kusů (Ks)" align="right" />
-                  <Th id="weight" label="Váha (kg)" align="right" />
+                  <Th id="packingHUs" label="Zabalené HU" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="packCatStats.Normal" label="Normal HU" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="packCatStats.Express" label="Express HU" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="packCatStats.OE" label="OE HU" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="packingKs" label="Celkem Kusů (Ks)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <Th id="weight" label="Váha (kg)" align="right"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 </>
               )}
             </tr>
