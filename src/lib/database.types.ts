@@ -129,6 +129,18 @@ export interface Database {
         Args: Record<string, any>
         Returns: any
       }
+      get_daily_summary: {
+        Args: Record<string, any>
+        Returns: any
+      }
+      get_shift_summary: {
+        Args: Record<string, any>
+        Returns: any
+      }
+      get_operator_daily_summary: {
+        Args: Record<string, any>
+        Returns: any
+      }
     }
     Views: {
       [_ in never]: never
