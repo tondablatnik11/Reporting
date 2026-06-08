@@ -118,7 +118,7 @@ type DataContextType = {
   likpData: Record<string, string>;
   addPickingData: (data: PickingRecord[]) => void;
   addPackingData: (data: PackingRecord[]) => void;
-  addLikpData: (data: {delivery: string, shipping_point: string}[]) => void;
+  addLikpData: (data: {delivery: string, shipping_point: string, carrier?: string}[]) => void;
   clearData: () => void;
 };
 
@@ -129,7 +129,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [packingData, setPackingData] = useState<PackingRecord[]>([]);
   const [likpData, setLikpData] = useState<Record<string, string>>({});
 
-  const addLikpData = (data: {delivery: string, shipping_point: string}[]) => {
+  const addLikpData = (data: {delivery: string, shipping_point: string, carrier?: string}[]) => {
     setLikpData(prev => {
       const next = { ...prev };
       data.forEach(item => {
