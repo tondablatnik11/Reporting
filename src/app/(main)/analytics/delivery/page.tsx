@@ -60,8 +60,9 @@ export default function DeliveryAnalyticsPage() {
     setLoading(true);
     setHasSearched(true);
     try {
+      const cleanTerm = (term ?? searchTerm).trim();
       const { data, error } = await supabase.rpc('get_delivery_detail', {
-        p_search_term: term ?? searchTerm
+        p_search_term: cleanTerm
       });
       if (error) throw error;
       setResults(data || []);
@@ -136,12 +137,11 @@ export default function DeliveryAnalyticsPage() {
 
             return (
               <div key={del.delivery || idx} className="glass-panel overflow-hidden">
-                {/* Hlavní řádek – kliknutelný */}
+                {/* Hlavní řádek */}
                 <button 
                   onClick={() => toggleExpand(del.delivery)}
                   className="w-full p-5 flex flex-col md:flex-row gap-4 md:items-center text-left hover:bg-white/[0.02] transition-colors"
                 >
-                  {/* Delivery číslo + kategorie */}
                   <div className="flex items-center gap-3 md:w-64 shrink-0">
                     <Truck className="w-5 h-5 text-cyan-400 shrink-0" />
                     <div>
@@ -157,7 +157,6 @@ export default function DeliveryAnalyticsPage() {
                     </div>
                   </div>
 
-                  {/* KPIs */}
                   <div className="flex gap-6 flex-wrap flex-1">
                     <div className="text-center min-w-[80px]">
                       <p className="text-xs text-white/40 flex items-center gap-1 justify-center"><PackageSearch className="w-3 h-3" /> Pick TO</p>
@@ -177,7 +176,6 @@ export default function DeliveryAnalyticsPage() {
                     </div>
                   </div>
 
-                  {/* Expand arrow */}
                   <ArrowRight className={`w-5 h-5 text-white/30 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
                 </button>
 
@@ -185,7 +183,7 @@ export default function DeliveryAnalyticsPage() {
                 {isExpanded && (
                   <div className="border-t border-white/5 p-5 grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/[0.01]">
                     
-                    {/* Picking detail */}
+                    {/* Picking sekce */}
                     <div className="space-y-4">
                       <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
                         <PackageSearch className="w-4 h-4" /> Picking
@@ -202,7 +200,6 @@ export default function DeliveryAnalyticsPage() {
                         </div>
                       </div>
 
-                      {/* Picking časy */}
                       <div className="bg-white/[0.03] rounded-lg p-3 border border-white/5">
                         <p className="text-xs text-white/40 mb-2 flex items-center gap-1"><Clock className="w-3 h-3" /> Časové okno pickingu</p>
                         <div className="flex items-center gap-2 text-sm text-white/70">
@@ -212,7 +209,6 @@ export default function DeliveryAnalyticsPage() {
                         </div>
                       </div>
 
-                      {/* Operátoři */}
                       <div className="bg-white/[0.03] rounded-lg p-3 border border-white/5">
                         <p className="text-xs text-white/40 mb-2 flex items-center gap-1"><Users className="w-3 h-3" /> Pickeři</p>
                         <div className="flex flex-wrap gap-2">
@@ -225,7 +221,6 @@ export default function DeliveryAnalyticsPage() {
                         </div>
                       </div>
 
-                      {/* Lokace */}
                       <div className="bg-white/[0.03] rounded-lg p-3 border border-white/5">
                         <p className="text-xs text-white/40 mb-2 flex items-center gap-1"><MapPin className="w-3 h-3" /> Zdrojové lokace</p>
                         <div className="flex flex-wrap gap-2">
@@ -242,7 +237,7 @@ export default function DeliveryAnalyticsPage() {
                       </div>
                     </div>
 
-                    {/* Packing detail */}
+                    {/* Packing sekce */}
                     <div className="space-y-4">
                       <h4 className="text-sm font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
                         <Box className="w-4 h-4" /> Packing
@@ -259,7 +254,6 @@ export default function DeliveryAnalyticsPage() {
                         </div>
                       </div>
 
-                      {/* Packing časy */}
                       <div className="bg-white/[0.03] rounded-lg p-3 border border-white/5">
                         <p className="text-xs text-white/40 mb-2 flex items-center gap-1"><Clock className="w-3 h-3" /> Časové okno balení</p>
                         <div className="flex items-center gap-2 text-sm text-white/70">
@@ -269,7 +263,6 @@ export default function DeliveryAnalyticsPage() {
                         </div>
                       </div>
 
-                      {/* Operátoři */}
                       <div className="bg-white/[0.03] rounded-lg p-3 border border-white/5">
                         <p className="text-xs text-white/40 mb-2 flex items-center gap-1"><Users className="w-3 h-3" /> Packeři</p>
                         <div className="flex flex-wrap gap-2">
@@ -282,7 +275,6 @@ export default function DeliveryAnalyticsPage() {
                         </div>
                       </div>
 
-                      {/* Obaly */}
                       <div className="bg-white/[0.03] rounded-lg p-3 border border-white/5">
                         <p className="text-xs text-white/40 mb-2 flex items-center gap-1"><Tag className="w-3 h-3" /> Použité obaly</p>
                         <div className="flex flex-wrap gap-2">
@@ -296,7 +288,7 @@ export default function DeliveryAnalyticsPage() {
                       </div>
                     </div>
 
-                    {/* Lead time highlight */}
+                    {/* Celkový časový přehled */}
                     {leadTime !== "—" && (
                       <div className="md:col-span-2 bg-gradient-to-r from-blue-500/10 via-cyan-500/10 to-purple-500/10 rounded-lg p-4 border border-cyan-500/20 flex items-center gap-4">
                         <Clock className="w-6 h-6 text-cyan-400 shrink-0" />
