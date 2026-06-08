@@ -42,15 +42,32 @@ export default function Sidebar() {
           Přehled
         </Link>
 
-        <div className="nav-category">Hlavní Analýzy</div>
+        <div className="nav-category">Denní Analytika & Trendy</div>
         <Link
-          href="/hourly-trend"
-          className={`nav-item ${isActive("/hourly-trend") ? "active" : ""}`}
+          href="/analytics/trends"
+          className={`nav-item ${isActive("/analytics/trends") ? "active" : ""}`}
         >
           <TrendingUp className="w-5 h-5" />
-          Hodinový Trend
+          Denní Trendy
         </Link>
 
+        <Link
+          href="/analytics/shifts"
+          className={`nav-item ${isActive("/analytics/shifts") ? "active" : ""}`}
+        >
+          <BarChart3 className="w-5 h-5" />
+          Benchmarking Směn
+        </Link>
+
+        <Link
+          href="/analytics/operators"
+          className={`nav-item ${isActive("/analytics/operators") ? "active" : ""}`}
+        >
+          <Users2 className="w-5 h-5" />
+          Analytika Operátorů
+        </Link>
+
+        <div className="nav-category">Live Pohledy (Staré)</div>
         <Link
           href="/picking"
           className={`nav-item ${isActive("/picking") ? "active" : ""}`}
@@ -67,14 +84,7 @@ export default function Sidebar() {
           Packing
         </Link>
 
-        <div className="nav-category">Detailní Analytika</div>
-        <Link
-          href="/analytics/pick"
-          className={`nav-item ${isActive("/analytics/pick") ? "active" : ""}`}
-        >
-          <PackageSearch className="w-5 h-5" />
-          Pick Analytika
-        </Link>
+        <div className="nav-category">Procesní Kvalita</div>
 
         <Link
           href="/analytics/pack"
@@ -97,16 +107,7 @@ export default function Sidebar() {
           className={`nav-item ${isActive("/analytics/predictions") ? "active" : ""}`}
         >
           <TrendingUp className="w-5 h-5" />
-          Predikce
-        </Link>
-
-        <div className="nav-category">Srovnání Výkonů</div>
-        <Link
-          href="/shift-comparison"
-          className={`nav-item ${isActive("/shift-comparison") || isActive("/comparison") ? "active" : ""}`}
-        >
-          <BarChart3 className="w-5 h-5" />
-          Porovnání směn
+          Predikce & Plánování
         </Link>
 
         <div className="nav-category">Nástroje</div>
