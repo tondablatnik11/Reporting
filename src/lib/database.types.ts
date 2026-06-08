@@ -92,5 +92,33 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['vekp_packing_headers']['Row']>
       }
     }
+    Functions: {
+      get_delivery_detail: {
+        Args: {
+          p_search_term: string
+        }
+        Returns: any
+      }
+      get_pick_material_stats: {
+        Args: {
+          p_start_date: string
+          p_end_date: string
+          p_shift: string | null
+        }
+        Returns: any
+      }
+      get_pack_material_stats: {
+        Args: {
+          p_start_date: string
+          p_end_date: string
+          p_shift: string | null
+        }
+        Returns: any
+      }
+      get_daily_history: {
+        Args: Record<string, never>
+        Returns: any
+      }
+    }
   }
 }
