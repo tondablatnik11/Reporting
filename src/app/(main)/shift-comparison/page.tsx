@@ -11,15 +11,14 @@ export default function ShiftComparisonPage() {
   const todayStr = new Date().toISOString().split('T')[0];
   const [period, setPeriod] = useState<Period>("day");
   const [dateValue, setDateValue] = useState<string>(todayStr);
-  const { pickingData: localPicking, packingData: localPacking } = useData();
-  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue);
+  const { pickingData: localPicking, packingData: localPacking, likpData } = useData();
+  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue, false, "", likpData);
 
   const currentWeek = getISOWeekNumber(new Date());
   const isEvenWeek = currentWeek % 2 === 0;
 
   const shiftStats = useMemo(() => aggregateShiftStats(pickingData, packingData), [pickingData, packingData]);
 
-  // Hourly data per shift (for day view)
   const hourlyShiftData = useMemo(() => {
     const map = new Map<string, { time: string; shiftATOs: number; shiftBTOs: number; shiftAHUs: number; shiftBHUs: number }>();
     hourlySlots.forEach(slot => {
@@ -67,11 +66,24 @@ export default function ShiftComparisonPage() {
     { name: 'Směna B', pickingTOs: shiftStats.b.pickingTOs, packingHUs: shiftStats.b.packingHUs },
   ];
 
+  const categoryBarData = [
+    { name: 'Směna A (Pick)', Normal: shiftStats.a.pickingNormal, Express: shiftStats.a.pickingExpress, OE: shiftStats.a.pickingOE },
+    { name: 'Směna B (Pick)', Normal: shiftStats.b.pickingNormal, Express: shiftStats.b.pickingExpress, OE: shiftStats.b.pickingOE },
+    { name: 'Směna A (Pack)', Normal: shiftStats.a.packingNormal, Express: shiftStats.a.packingExpress, OE: shiftStats.a.packingOE },
+    { name: 'Směna B (Pack)', Normal: shiftStats.b.packingNormal, Express: shiftStats.b.packingExpress, OE: shiftStats.b.packingOE },
+  ];
+
   const rows = [
     { label: 'Picking (TO)', a: shiftStats.a.pickingTOs, b: shiftStats.b.pickingTOs },
     { label: 'Packing (HU)', a: shiftStats.a.packingHUs, b: shiftStats.b.packingHUs },
-    { label: 'Picking (Ks)', a: shiftStats.a.pickingKs, b: shiftStats.b.pickingKs, fmt: true },
-    { label: 'Packing (Ks)', a: shiftStats.a.packingKs, b: shiftStats.b.packingKs, fmt: true },
+    { label: 'Picking (Ks) - Celkem', a: shiftStats.a.pickingKs, b: shiftStats.b.pickingKs, fmt: true },
+    { label: '  ↳ z toho Normal (Ks)', a: shiftStats.a.pickingNormal, b: shiftStats.b.pickingNormal, fmt: true, sub: true },
+    { label: '  ↳ z toho Express (Ks)', a: shiftStats.a.pickingExpress, b: shiftStats.b.pickingExpress, fmt: true, sub: true },
+    { label: '  ↳ z toho OE (Ks)', a: shiftStats.a.pickingOE, b: shiftStats.b.pickingOE, fmt: true, sub: true },
+    { label: 'Packing (Ks) - Celkem', a: shiftStats.a.packingKs, b: shiftStats.b.packingKs, fmt: true },
+    { label: '  ↳ z toho Normal (Ks)', a: shiftStats.a.packingNormal, b: shiftStats.b.packingNormal, fmt: true, sub: true },
+    { label: '  ↳ z toho Express (Ks)', a: shiftStats.a.packingExpress, b: shiftStats.b.packingExpress, fmt: true, sub: true },
+    { label: '  ↳ z toho OE (Ks)', a: shiftStats.a.packingOE, b: shiftStats.b.packingOE, fmt: true, sub: true },
     { label: 'Váha (kg)', a: shiftStats.a.weight, b: shiftStats.b.weight, fmt: true },
     { label: 'Operátoři', a: shiftStats.a.operators, b: shiftStats.b.operators },
   ];
@@ -96,7 +108,6 @@ export default function ShiftComparisonPage() {
         />
       </div>
 
-      {/* Shift A vs B Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className={`glass-panel p-6 border-l-4 relative overflow-hidden ${winner === 'A' ? 'border-l-emerald-400' : 'border-l-emerald-500/30'}`}>
           <div className="absolute top-2 right-4 opacity-[0.04]"><span className="text-9xl font-black text-emerald-400">A</span></div>
@@ -143,38 +154,18 @@ export default function ShiftComparisonPage() {
         </div>
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">TO + HU – Směna A vs B</h3>
-          <div className="h-[280px]">
-            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} margin={{ top: 20, right: 10, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="name" stroke="rgba(255,255,255,0.25)" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ backgroundColor: 'rgba(10,14,30,0.95)', borderColor: 'rgba(255,255,255,0.08)', borderRadius: '10px' }} itemStyle={{ color: '#fff' }} />
-                  <Legend />
-                  <Bar dataKey="pickingTOs" name="TO (Picking)" fill="#6391ff" radius={[4,4,0,0]} />
-                  <Bar dataKey="packingHUs" name="HU (Packing)" fill="#b18cff" radius={[4,4,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
         <div className="glass-panel p-6">
           <h3 className="text-lg font-bold text-white mb-5">Hodinový rozklad – TO po směnách</h3>
           <div className="h-[280px]">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hourlyShiftData} margin={{ top: 20, right: 10, left: 0, bottom: 5 }}>
+                <BarChart data={hourlyShiftData} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                   <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ backgroundColor: 'rgba(10,14,30,0.95)', borderColor: 'rgba(255,255,255,0.08)', borderRadius: '10px' }} itemStyle={{ color: '#fff' }} />
-                  <Legend />
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
                   <Bar dataKey="shiftATOs" name="Směna A (TO)" fill="#34d399" radius={[3,3,0,0]} />
                   <Bar dataKey="shiftBTOs" name="Směna B (TO)" fill="#fbbf24" radius={[3,3,0,0]} />
                 </BarChart>
@@ -182,45 +173,31 @@ export default function ShiftComparisonPage() {
             )}
           </div>
         </div>
-      </div>
 
-      {/* Visual comparison bars */}
-      <div className="glass-panel p-6">
-        <h3 className="text-lg font-bold text-white mb-5">Vizuální srovnání</h3>
-        <div className="space-y-5">
-          {[
-            { label: 'Picking (TO)', a: shiftStats.a.pickingTOs, b: shiftStats.b.pickingTOs },
-            { label: 'Packing (HU)', a: shiftStats.a.packingHUs, b: shiftStats.b.packingHUs },
-          ].map(item => {
-            const max = Math.max(item.a, item.b, 1);
-            return (
-              <div key={item.label}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-white/70">{item.label}</span>
-                  <span className="text-xs text-white/30">{item.a === item.b ? 'Vyrovnáno' : `${item.a > item.b ? 'Směna A' : 'Směna B'} +${Math.abs(item.a - item.b)}`}</span>
-                </div>
-                <div className="flex gap-2 items-center">
-                  <span className="text-xs text-emerald-400 w-8 text-right font-bold">{item.a}</span>
-                  <div className="flex-1 flex gap-1 h-6">
-                    <div className="rounded-l-full transition-all duration-700" style={{ width: `${(item.a / max) * 100}%`, background: 'linear-gradient(90deg, #34d39940, #34d399)' }} />
-                    <div className="rounded-r-full transition-all duration-700" style={{ width: `${(item.b / max) * 100}%`, background: 'linear-gradient(90deg, #fbbf24, #fbbf2440)' }} />
-                  </div>
-                  <span className="text-xs text-amber-400 w-8 font-bold">{item.b}</span>
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span className="text-[10px] text-emerald-400/50">Směna A</span>
-                  <span className="text-[10px] text-amber-400/50">Směna B</span>
-                </div>
-              </div>
-            );
-          })}
+        <div className="glass-panel p-6">
+          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle směn (Ks)</h3>
+          <div className="h-[280px]">
+            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={categoryBarData} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="name" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                  <Bar dataKey="Normal" name="Normální" stackId="cat" fill="#10b981" radius={[0,0,0,0]} />
+                  <Bar dataKey="Express" name="Express" stackId="cat" fill="#f59e0b" radius={[0,0,0,0]} />
+                  <Bar dataKey="OE" name="OE" stackId="cat" fill="#ef4444" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Detail table */}
       <div className="glass-panel overflow-hidden">
         <div className="p-5 border-b border-white/5 bg-white/[0.02]">
-          <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Detailní srovnání</h3>
+          <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Detailní srovnání vč. struktury</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -242,17 +219,17 @@ export default function ShiftComparisonPage() {
                 const diff = row.a - row.b;
                 const better = diff > 0 ? 'A' : diff < 0 ? 'B' : null;
                 return (
-                  <tr key={i} className={`hover:bg-white/[0.03] transition-colors ${i % 2 === 1 ? 'bg-white/[0.015]' : ''}`}>
-                    <td className="px-5 py-3.5 text-sm font-medium text-white/80">{row.label}</td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-white/90 text-right">{row.fmt ? row.a.toLocaleString() : row.a}</td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-white/90 text-right">{row.fmt ? row.b.toLocaleString() : row.b}</td>
-                    <td className={`px-5 py-3.5 text-sm font-bold text-right ${diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-white/30'}`}>
+                  <tr key={i} className={`hover:bg-white/[0.03] transition-colors ${row.sub ? 'bg-black/20' : (i % 2 === 1 ? 'bg-white/[0.015]' : '')}`}>
+                    <td className={`px-5 py-3 text-sm ${row.sub ? 'text-white/50 pl-8' : 'font-medium text-white/80 py-3.5'}`}>{row.label}</td>
+                    <td className={`px-5 py-3 text-sm text-right ${row.sub ? 'text-white/60' : 'font-bold text-white/90'}`}>{row.fmt ? row.a.toLocaleString() : row.a}</td>
+                    <td className={`px-5 py-3 text-sm text-right ${row.sub ? 'text-white/60' : 'font-bold text-white/90'}`}>{row.fmt ? row.b.toLocaleString() : row.b}</td>
+                    <td className={`px-5 py-3 text-sm font-bold text-right ${diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-white/30'}`}>
                       {diff > 0 ? '+' : ''}{row.fmt ? diff.toLocaleString() : diff}
                     </td>
-                    <td className="px-5 py-3.5 text-center">
-                      {better === 'A' && <span className="inline-block w-6 h-6 rounded-full bg-emerald-400/20 text-emerald-400 text-xs font-bold leading-6">A</span>}
-                      {better === 'B' && <span className="inline-block w-6 h-6 rounded-full bg-amber-400/20 text-amber-400 text-xs font-bold leading-6">B</span>}
-                      {!better && <span className="text-white/20 text-xs">=</span>}
+                    <td className="px-5 py-3 text-center">
+                      {!row.sub && better === 'A' && <span className="inline-block w-6 h-6 rounded-full bg-emerald-400/20 text-emerald-400 text-xs font-bold leading-6">A</span>}
+                      {!row.sub && better === 'B' && <span className="inline-block w-6 h-6 rounded-full bg-amber-400/20 text-amber-400 text-xs font-bold leading-6">B</span>}
+                      {!row.sub && !better && <span className="text-white/20 text-xs">=</span>}
                     </td>
                   </tr>
                 );
