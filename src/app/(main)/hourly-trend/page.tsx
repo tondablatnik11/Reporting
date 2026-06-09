@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import { 
   PackageSearch, Box, Users, TrendingUp, Calendar, 
-  Target, BarChart2, Activity, ArrowRight
+  Target, Activity
 } from "lucide-react";
 import { useData, getShiftLabel } from "@/lib/data-context";
 import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-period-data";
@@ -99,7 +99,7 @@ export default function DailyTrendsPage() {
     });
 
     // Trend: Klouzavý průměr za 30 dní
-    const trend30Days = validHistory.slice(-30).map((h, i, arr) => {
+    const trend30Days = validHistory.slice(-30).map((h, i) => {
       const window = validHistory.slice(Math.max(0, validHistory.length - 30 + i - 6), validHistory.length - 30 + i + 1);
       const avg = window.reduce((s, w) => s + Number(w.pick_tos), 0) / window.length;
       const total = Number(h.cat_normal_tos) + Number(h.cat_express_tos) + Number(h.cat_oe_tos);
@@ -298,7 +298,8 @@ export default function DailyTrendsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                     <XAxis dataKey="dateLabel" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                     <YAxis tickFormatter={(val) => `${val * 100}%`} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                    <Tooltip formatter={(val: number) => `${val.toFixed(1)}%`} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px' }} />
+                    {/* OPRAVENÁ TYPOVÁ KONTROLA (val: any) */}
+                    <Tooltip formatter={(val: any) => typeof val === 'number' ? `${val.toFixed(1)}%` : `${val}%`} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px' }} />
                     <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
                     <Area type="monotone" dataKey="pctNormal" name="Normal" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.5} />
                     <Area type="monotone" dataKey="pctExpress" name="Express" stackId="1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.5} />
