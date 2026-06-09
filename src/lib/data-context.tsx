@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState } from "react";
 
 export type PickingRecord = {
   to_number: string;
@@ -128,16 +128,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [packingData, setPackingData] = useState<PackingRecord[]>([]);
   const [likpData, setLikpData] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    import("@/lib/supabase").then(({ supabase }) => {
-      supabase.from('app_settings').select('*').in('key', ['shifts', 'targets', 'operators']).then(({ data }) => {
-        data?.forEach(row => {
-          localStorage.setItem(`hellmann_${row.key}`, JSON.stringify(row.value));
-        });
-      });
-    });
-  }, []);
-
   const addLikpData = (data: {delivery: string, shipping_point: string, carrier?: string}[]) => {
     setLikpData(prev => {
       const next = { ...prev };
@@ -145,7 +135,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
          let cat = "Normal";
          if (item.shipping_point === "FM21" || item.shipping_point === "FM22") cat = "Express";
          else if (item.shipping_point === "FM24") cat = "OE";
-         next[item.delivery] = cat;
+         
+         if (item.delivery) {
+             next[item.delivery] = cat;
+             // ZDE: Zajištění 100% propojení tím, že uložíme i oříznutou dodávku
+             next[item.delivery.replace(/^0+/, '')] = cat; 
+         }
       });
       return next;
     });
@@ -183,7 +178,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             quantity: item.quantity || existing.quantity,
             packaging_material: item.packaging_material || existing.packaging_material,
             category: item.category || existing.category,
-            delivery: item.delivery || existing.delivery,
+            delivery: item.delivery || existing.delivery || "",
           });
         }
       });
@@ -212,7 +207,6 @@ export function useData() {
   return context;
 }
 
-// Interface for shift performance data
 interface ShiftPerformance {
   picking: {
     quantity: number;
@@ -224,7 +218,6 @@ interface ShiftPerformance {
   };
 }
 
-// Interface for daily performance comparison
 export interface DailyComparison {
   date: string;
   morning: ShiftPerformance;
@@ -235,21 +228,28 @@ export interface DailyComparison {
   };
 }
 
-import { loadDailyPerformance, loadMonthlyPerformance, loadWeeklyPerformance, DailyPerformance } from '@/lib/history';
-
 export function useAggregatedData() {
-  const today = new Date().toISOString().split('T')[0];
   const { pickingData, packingData, likpData } = useData();
 
-  const enrichedPickingData = pickingData.map(p => ({
-    ...p,
-    category: p.delivery && likpData[p.delivery] ? likpData[p.delivery] : "Normal"
-  }));
+  const cleanDel = (d?: string) => d ? d.replace(/^0+/, '') : '';
 
-  const enrichedPackingData = packingData.map(p => ({
-    ...p,
-    category: p.category || (p.delivery && likpData[p.delivery] ? likpData[p.delivery] : "Normal")
-  }));
+  const enrichedPickingData = pickingData.map(p => {
+    const d1 = p.delivery || "";
+    const d2 = cleanDel(p.delivery);
+    return {
+      ...p,
+      category: p.category || likpData[d1] || likpData[d2] || "Normal"
+    };
+  });
+
+  const enrichedPackingData = packingData.map(p => {
+    const d1 = p.delivery || "";
+    const d2 = cleanDel(p.delivery);
+    return {
+      ...p,
+      category: p.category || likpData[d1] || likpData[d2] || "Normal"
+    };
+  });
 
   const chartDataMap = new Map();
   hourlySlots.forEach(slot => {
@@ -389,7 +389,7 @@ export function useAggregatedData() {
 
     compareWithPreviousPeriod: async (period: 'day' | 'week' | 'month') => {
       const currentData = { totalPicking, totalPacking, totalPickingTOs: globalPickingTOs.size, totalPackingHUs: globalPackingHUs.size };
-      const previousData = { totalPicking: 0, totalPacking: 0, totalPickingTOs: 0, totalPackingHUs: 0 };
+      let previousData = { totalPicking: 0, totalPacking: 0, totalPickingTOs: 0, totalPackingHUs: 0 };
 
       return {
         current: currentData,
