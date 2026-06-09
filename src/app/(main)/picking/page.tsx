@@ -1,10 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useMemo, useState } from "react";
 import { PackageSearch, Users, Filter } from "lucide-react";
 import {
-  ComposedChart, BarChart, Bar, Line,
+  ComposedChart, BarChart, Bar, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { useData, hourlySlots, getSlot } from "@/lib/data-context";
@@ -34,11 +33,11 @@ export default function PickingPage() {
   const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
 
   const totalKs = pickingData.reduce((s, r) => s + r.quantity, 0);
-  const totalTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || '0'}`)).size;
+  const totalTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
   const uniqueOperators = new Set(pickingData.filter(r => r.operator && r.quantity > 0).map(r => r.operator)).size;
 
   const compTotalKs = compPicking.reduce((s, r) => s + r.quantity, 0);
-  const compTotalTOs = new Set(compPicking.map(r => `${r.to_number}-${r.to_item || '0'}`)).size;
+  const compTotalTOs = new Set(compPicking.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
 
   const getDiffLabel = (current: number, compare: number) => {
     if (!isComparing || compare === 0) return null;
@@ -78,7 +77,7 @@ export default function PickingPage() {
       if (!opTOs.has(timeKey)) opTOs.set(timeKey, new Map());
       const slotMap = opTOs.get(timeKey)!;
       if (!slotMap.has(p.operator)) slotMap.set(p.operator, new Set());
-      slotMap.get(p.operator)!.add(`${p.to_number}-${p.to_item || '0'}`);
+      slotMap.get(p.operator)!.add(`${p.to_number}-${p.to_item || Math.random()}`);
     });
 
     const ops = new Set<string>();
@@ -94,11 +93,6 @@ export default function PickingPage() {
     return { operatorChartData: Array.from(map.values()), operators: Array.from(ops) };
   }, [pickingData, period, chartData]);
 
-  const recentPicking = useMemo(() =>
-    [...pickingData].sort((a, b) => new Date(b.confirmed_at).getTime() - new Date(a.confirmed_at).getTime()).slice(0, 8),
-    [pickingData]
-  );
-
   const toggleOp = (op: string) => setSelectedOperators(prev => {
     const next = new Set(prev);
     next.has(op) ? next.delete(op) : next.add(op);
@@ -106,7 +100,7 @@ export default function PickingPage() {
   });
   const visibleOps = selectedOperators.size > 0 ? operators.filter(o => selectedOperators.has(o)) : operators;
 
-  const xKey = "time";
+  const xKey = period === "day" ? "fullTime" : "time";
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -179,20 +173,25 @@ export default function PickingPage() {
         </div>
 
         <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (TO)</h3>
+          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (Ks)</h3>
           <div className="h-[280px] w-full">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorNormPick" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorExpPick" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4}/><stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorOePick" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff0a" vertical={false} />
                   <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
-                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  <Bar dataKey="pickingNormalTOs" name="Normální (TO)" stackId="a" fill="#10b981" radius={[0,0,0,0]} />
-                  <Bar dataKey="pickingExpressTOs" name="Express (TO)" stackId="a" fill="#f59e0b" radius={[0,0,0,0]} />
-                  <Bar dataKey="pickingOETOs" name="OE (TO)" stackId="a" fill="#ef4444" radius={[4,4,0,0]} />
-                </BarChart>
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <Area type="monotone" dataKey="pickingNormal" name="Normální (Ks)" stackId="1" stroke="#10b981" fill="url(#colorNormPick)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pickingExpress" name="Express (Ks)" stackId="1" stroke="#f59e0b" fill="url(#colorExpPick)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pickingOE" name="OE (Ks)" stackId="1" stroke="#ef4444" fill="url(#colorOePick)" strokeWidth={2} />
+                </AreaChart>
               </ResponsiveContainer>
             )}
           </div>
