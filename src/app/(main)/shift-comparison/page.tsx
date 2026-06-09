@@ -61,11 +61,6 @@ export default function ShiftComparisonPage() {
   const totalB = shiftStats.b.pickingTOs + shiftStats.b.packingHUs;
   const winner = totalA > totalB ? 'A' : totalB > totalA ? 'B' : null;
 
-  const barData = [
-    { name: 'Směna A', pickingTOs: shiftStats.a.pickingTOs, packingHUs: shiftStats.a.packingHUs },
-    { name: 'Směna B', pickingTOs: shiftStats.b.pickingTOs, packingHUs: shiftStats.b.packingHUs },
-  ];
-
   const categoryBarData = [
     { name: 'Směna A (Pick)', Normal: shiftStats.a.pickingNormal, Express: shiftStats.a.pickingExpress, OE: shiftStats.a.pickingOE },
     { name: 'Směna B (Pick)', Normal: shiftStats.b.pickingNormal, Express: shiftStats.b.pickingExpress, OE: shiftStats.b.pickingOE },
@@ -74,16 +69,16 @@ export default function ShiftComparisonPage() {
   ];
 
   const rows = [
-    { label: 'Picking (TO)', a: shiftStats.a.pickingTOs, b: shiftStats.b.pickingTOs },
-    { label: 'Packing (HU)', a: shiftStats.a.packingHUs, b: shiftStats.b.packingHUs },
+    { label: 'Picking (TO) - Celkem', a: shiftStats.a.pickingTOs, b: shiftStats.b.pickingTOs },
+    { label: '  ↳ z toho Normal (TO)', a: shiftStats.a.pickingNormal, b: shiftStats.b.pickingNormal, fmt: true, sub: true },
+    { label: '  ↳ z toho Express (TO)', a: shiftStats.a.pickingExpress, b: shiftStats.b.pickingExpress, fmt: true, sub: true },
+    { label: '  ↳ z toho OE (TO)', a: shiftStats.a.pickingOE, b: shiftStats.b.pickingOE, fmt: true, sub: true },
     { label: 'Picking (Ks) - Celkem', a: shiftStats.a.pickingKs, b: shiftStats.b.pickingKs, fmt: true },
-    { label: '  ↳ z toho Normal (Ks)', a: shiftStats.a.pickingNormal, b: shiftStats.b.pickingNormal, fmt: true, sub: true },
-    { label: '  ↳ z toho Express (Ks)', a: shiftStats.a.pickingExpress, b: shiftStats.b.pickingExpress, fmt: true, sub: true },
-    { label: '  ↳ z toho OE (Ks)', a: shiftStats.a.pickingOE, b: shiftStats.b.pickingOE, fmt: true, sub: true },
+    { label: 'Packing (HU) - Celkem', a: shiftStats.a.packingHUs, b: shiftStats.b.packingHUs },
+    { label: '  ↳ z toho Normal (HU)', a: shiftStats.a.packingNormal, b: shiftStats.b.packingNormal, fmt: true, sub: true },
+    { label: '  ↳ z toho Express (HU)', a: shiftStats.a.packingExpress, b: shiftStats.b.packingExpress, fmt: true, sub: true },
+    { label: '  ↳ z toho OE (HU)', a: shiftStats.a.packingOE, b: shiftStats.b.packingOE, fmt: true, sub: true },
     { label: 'Packing (Ks) - Celkem', a: shiftStats.a.packingKs, b: shiftStats.b.packingKs, fmt: true },
-    { label: '  ↳ z toho Normal (Ks)', a: shiftStats.a.packingNormal, b: shiftStats.b.packingNormal, fmt: true, sub: true },
-    { label: '  ↳ z toho Express (Ks)', a: shiftStats.a.packingExpress, b: shiftStats.b.packingExpress, fmt: true, sub: true },
-    { label: '  ↳ z toho OE (Ks)', a: shiftStats.a.packingOE, b: shiftStats.b.packingOE, fmt: true, sub: true },
     { label: 'Váha (kg)', a: shiftStats.a.weight, b: shiftStats.b.weight, fmt: true },
     { label: 'Operátoři', a: shiftStats.a.operators, b: shiftStats.b.operators },
   ];
@@ -175,7 +170,7 @@ export default function ShiftComparisonPage() {
         </div>
 
         <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle směn (Ks)</h3>
+          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle směn (TO/HU)</h3>
           <div className="h-[280px]">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
               <ResponsiveContainer width="100%" height="100%">
@@ -185,7 +180,6 @@ export default function ShiftComparisonPage() {
                   <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
                   <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  {/* OPRAVA: Zde jsem odstranil zakulacení (radius) u skládaných sloupců pro zamezení stejné chyby */}
                   <Bar dataKey="Normal" name="Normální" stackId="cat" fill="#10b981" />
                   <Bar dataKey="Express" name="Express" stackId="cat" fill="#f59e0b" />
                   <Bar dataKey="OE" name="OE" stackId="cat" fill="#ef4444" />
