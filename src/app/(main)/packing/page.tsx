@@ -1,10 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useMemo, useState } from "react";
 import { Box, Users, Filter } from "lucide-react";
 import {
-  ComposedChart, BarChart, Bar, Line,
+  ComposedChart, BarChart, Bar, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { useData, hourlySlots, getSlot } from "@/lib/data-context";
@@ -52,7 +51,10 @@ export default function PackingPage() {
   };
 
   const { operatorChartData, operators } = useMemo(() => {
-    const timeKeys = [...new Set(chartData.map(d => d.time))];
+    const timeKeys: string[] = period === "day"
+      ? hourlySlots.map(s => s.start)
+      : [...new Set(chartData.map(d => d.time))];
+
     const map = new Map<string, any>();
     timeKeys.forEach(t => map.set(t, { time: t }));
 
@@ -97,6 +99,8 @@ export default function PackingPage() {
     return next;
   });
   const visibleOps = selectedOperators.size > 0 ? operators.filter(o => selectedOperators.has(o)) : operators;
+
+  const xKey = period === "day" ? "fullTime" : "time";
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -155,7 +159,7 @@ export default function PackingPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
@@ -169,20 +173,25 @@ export default function PackingPage() {
         </div>
 
         <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (HU)</h3>
+          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (Ks)</h3>
           <div className="h-[280px] w-full">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
-                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  <Bar dataKey="packingNormalHUs" name="Normální (HU)" stackId="a" fill="#10b981" radius={[0,0,0,0]} />
-                  <Bar dataKey="packingExpressHUs" name="Express (HU)" stackId="a" fill="#f59e0b" radius={[0,0,0,0]} />
-                  <Bar dataKey="packingOEHUs" name="OE (HU)" stackId="a" fill="#ef4444" radius={[4,4,0,0]} />
-                </BarChart>
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorNormPack" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorExpPack" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4}/><stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorOePack" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff0a" vertical={false} />
+                  <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <Area type="monotone" dataKey="packingNormal" name="Normální (Ks)" stackId="1" stroke="#10b981" fill="url(#colorNormPack)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingExpress" name="Express (Ks)" stackId="1" stroke="#f59e0b" fill="url(#colorExpPack)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingOE" name="OE (Ks)" stackId="1" stroke="#ef4444" fill="url(#colorOePack)" strokeWidth={2} />
+                </AreaChart>
               </ResponsiveContainer>
             )}
           </div>
