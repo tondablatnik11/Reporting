@@ -16,7 +16,7 @@ export default function HourlyTrendPage() {
 
   const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
 
-  const totalPickingTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || '0'}`)).size;
+  const totalPickingTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
   const totalPicking = pickingData.reduce((s, r) => s + r.quantity, 0);
   const totalPackingHUs = new Set(packingData.map(r => r.internal_hu)).size;
   const totalPacking = packingData.reduce((s, r) => s + (r.quantity || 0), 0);
@@ -30,7 +30,7 @@ export default function HourlyTrendPage() {
       const shift = getShiftLabel(new Date(p.confirmed_at));
       const t = shift === "A" ? a : b;
       t.pickingKs += p.quantity;
-      t.pickingTOs.add(`${p.to_number}-${p.to_item || '0'}`);
+      t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
       if (p.operator) t.operators.add(p.operator);
     });
     packingData.forEach(p => {
@@ -123,7 +123,6 @@ export default function HourlyTrendPage() {
         </div>
       </div>
 
-      {/* Main chart */}
       <div className="glass-panel p-6">
         <h3 className="text-lg font-bold text-white mb-6">Rozložení celkového výkonu v čase</h3>
         <div className="h-[460px] w-full">
@@ -148,7 +147,6 @@ export default function HourlyTrendPage() {
         </div>
       </div>
 
-      {/* Categories Area Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-panel p-6">
           <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
@@ -164,13 +162,13 @@ export default function HourlyTrendPage() {
                     <linearGradient id="colorOe" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff0a" vertical={false} />
-                  <XAxis dataKey="time" stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
+                  <XAxis dataKey={xLabel} stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Area type="monotone" dataKey="pickingNormalTOs" name="Normální (TO)" stackId="1" stroke="#10b981" fill="url(#colorNorm)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="pickingExpressTOs" name="Express (TO)" stackId="1" stroke="#f59e0b" fill="url(#colorExp)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="pickingOETOs" name="OE (TO)" stackId="1" stroke="#ef4444" fill="url(#colorOe)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pickingNormal" name="Normální (TO)" stackId="1" stroke="#10b981" fill="url(#colorNorm)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pickingExpress" name="Express (TO)" stackId="1" stroke="#f59e0b" fill="url(#colorExp)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pickingOE" name="OE (TO)" stackId="1" stroke="#ef4444" fill="url(#colorOe)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -191,13 +189,13 @@ export default function HourlyTrendPage() {
                     <linearGradient id="colorOeP" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff0a" vertical={false} />
-                  <XAxis dataKey="time" stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
+                  <XAxis dataKey={xLabel} stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Area type="monotone" dataKey="packingNormalHUs" name="Normální (HU)" stackId="1" stroke="#10b981" fill="url(#colorNormP)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="packingExpressHUs" name="Express (HU)" stackId="1" stroke="#f59e0b" fill="url(#colorExpP)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="packingOEHUs" name="OE (HU)" stackId="1" stroke="#ef4444" fill="url(#colorOeP)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingNormal" name="Normální (HU)" stackId="1" stroke="#10b981" fill="url(#colorNormP)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingExpress" name="Express (HU)" stackId="1" stroke="#f59e0b" fill="url(#colorExpP)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingOE" name="OE (HU)" stackId="1" stroke="#ef4444" fill="url(#colorOeP)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
