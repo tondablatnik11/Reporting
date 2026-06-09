@@ -66,7 +66,6 @@ export default function ShiftComparisonPage() {
     { name: 'Směna B', pickingTOs: shiftStats.b.pickingTOs, packingHUs: shiftStats.b.packingHUs },
   ];
 
-  // OPRAVA: Zde byly špatně pojmenované vlastnosti. Nyní odpovídají tomu, co vrací use-period-data.ts
   const categoryBarData = [
     { name: 'Směna A (Pick)', Normal: shiftStats.a.pickingNormal, Express: shiftStats.a.pickingExpress, OE: shiftStats.a.pickingOE },
     { name: 'Směna B (Pick)', Normal: shiftStats.b.pickingNormal, Express: shiftStats.b.pickingExpress, OE: shiftStats.b.pickingOE },
@@ -186,9 +185,10 @@ export default function ShiftComparisonPage() {
                   <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
                   <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  <Bar dataKey="Normal" name="Normální" stackId="cat" fill="#10b981" radius={[0,0,0,0]} />
-                  <Bar dataKey="Express" name="Express" stackId="cat" fill="#f59e0b" radius={[0,0,0,0]} />
-                  <Bar dataKey="OE" name="OE" stackId="cat" fill="#ef4444" radius={[4,4,0,0]} />
+                  {/* OPRAVA: Zde jsem odstranil zakulacení (radius) u skládaných sloupců pro zamezení stejné chyby */}
+                  <Bar dataKey="Normal" name="Normální" stackId="cat" fill="#10b981" />
+                  <Bar dataKey="Express" name="Express" stackId="cat" fill="#f59e0b" />
+                  <Bar dataKey="OE" name="OE" stackId="cat" fill="#ef4444" />
                 </BarChart>
               </ResponsiveContainer>
             )}
