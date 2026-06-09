@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -124,14 +123,23 @@ async function fetchCategoriesMap(deliveries: string[]): Promise<Record<string, 
   
   for (let i = 0; i < uniqueDels.length; i += chunkSize) {
     const chunk = uniqueDels.slice(i, i + chunkSize);
+    // Vytvoříme varianty s i bez nul pro bezpečné vyhledání
+    const strippedChunk = chunk.map(c => c.replace(/^0+/, ''));
+    const combinedChunk = Array.from(new Set([...chunk, ...strippedChunk]));
+
     const { data, error } = await supabase
       .from("likp_deliveries")
-      .select("delivery, category")
-      .in("delivery", chunk);
+      .select("delivery, shipping_point")
+      .in("delivery", combinedChunk);
       
     if (!error && data) {
       data.forEach(d => {
-        catMap[d.delivery] = d.category || "Normal";
+        let cat = "Normal";
+        if (d.shipping_point === "FM21" || d.shipping_point === "FM22") cat = "Express";
+        else if (d.shipping_point === "FM24") cat = "OE";
+        
+        catMap[d.delivery] = cat;
+        catMap[d.delivery.replace(/^0+/, '')] = cat; // Uložíme si obě verze pro rychlé přiřazení
       });
     }
   }
@@ -139,7 +147,7 @@ async function fetchCategoriesMap(deliveries: string[]): Promise<Record<string, 
 }
 
 async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
-  let allData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] = [];
+  let allData: any[] = [];
   let hasMore = true;
   let page = 0;
   const pageSize = 1000;
@@ -168,25 +176,32 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
     }
   }
 
-  const mapped = allData.map((r: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => ({
+  const mapped = allData.map((r: any) => ({
     to_number: r.tanum,
     to_item: r.tapos,
     operator: r.picker_sap_id || "",
     quantity: Number(r.dest_target_qty) || 0,
     weight: Number(r.weight) || 0,
     confirmed_at: new Date(r.confirmed_at),
-    delivery: r.delivery,
-    category: 'Normal' // Přidáno pro Type Safety
+    delivery: r.delivery || "",
+    category: 'Normal' 
   }));
 
   const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
-  mapped.forEach(m => { m.category = m.delivery ? (catMap[m.delivery] || 'Normal') : 'Normal'; });
+  
+  mapped.forEach(m => { 
+      const cleanDel = m.delivery ? m.delivery.replace(/^0+/, '') : '';
+      let cat = 'Normal';
+      if (m.delivery && catMap[m.delivery]) cat = catMap[m.delivery];
+      else if (cleanDel && catMap[cleanDel]) cat = catMap[cleanDel];
+      m.category = cat; 
+  });
 
   return mapped;
 }
 
 async function fetchPackingFromDb(from: string, to: string): Promise<PackingRecord[]> {
-  let allData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] = [];
+  let allData: any[] = [];
   let hasMore = true;
   let page = 0;
   const pageSize = 1000;
@@ -194,7 +209,8 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
   while (hasMore) {
     const { data, error } = await supabase
       .from("vekp_packing_headers")
-      .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, delivery, vepo_packing_items(packed_quantity, material)")
+      // ZDE: Nově vybíráme i delivery z vepo_packing_items
+      .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, delivery, vepo_packing_items(packed_quantity, material, delivery)")
       .gte("packed_at", from)
       .lte("packed_at", to)
       .not("packer_sap_id", "is", null)
@@ -215,10 +231,13 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
     }
   }
 
-  const mapped = allData.map((r: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+  const mapped = allData.map((r: any) => {
     const vepoItems = Array.isArray(r.vepo_packing_items) ? r.vepo_packing_items : [];
-    const totalQuantity = vepoItems.reduce((sum: number, item: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => sum + (Number(item.packed_quantity) || 0), 0);
+    const totalQuantity = vepoItems.reduce((sum: number, item: any) => sum + (Number(item.packed_quantity) || 0), 0);
     const material = vepoItems.length > 0 ? vepoItems[0].material : r.packaging_material;
+    
+    // ZDE: Pokud chybí delivery na VEKP (hlavičce), dohledáme ji z VEPO (položek)
+    const del = r.delivery || vepoItems.find((v: any) => v.delivery)?.delivery || "";
 
     return {
       internal_hu: r.internal_hu_number,
@@ -228,13 +247,20 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
       quantity: totalQuantity,
       created_at: new Date(r.packed_at),
       material: material,
-      delivery: r.delivery,
-      category: 'Normal' // Přidáno pro Type Safety
+      delivery: del,
+      category: 'Normal' 
     };
   });
 
   const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
-  mapped.forEach(m => { m.category = m.delivery ? (catMap[m.delivery] || 'Normal') : 'Normal'; });
+  
+  mapped.forEach(m => { 
+      const cleanDel = m.delivery ? m.delivery.replace(/^0+/, '') : '';
+      let cat = 'Normal';
+      if (m.delivery && catMap[m.delivery]) cat = catMap[m.delivery];
+      else if (cleanDel && catMap[cleanDel]) cat = catMap[cleanDel];
+      m.category = cat; 
+  });
 
   return mapped;
 }
@@ -261,7 +287,6 @@ export function usePeriodData(
     const { from, to } = getPeriodRange(period, dateValue);
     const { from: prevFrom, to: prevTo } = getPreviousPeriodRange(period, dateValue);
     
-    // eslint-disable-next-line
     setLoading(true);
 
     const fetches = [
@@ -299,7 +324,7 @@ export function usePeriodData(
     return () => { active = false; };
   }, [period, dateValue, isComparing, compareDateValue]);
 
-  const mergeLocalData = (dbData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[], localData: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[], timeField: string, idField: string, dateValueStr?: string) => {
+  const mergeLocalData = (dbData: any[], localData: any[], timeField: string, idField: string, dateValueStr?: string) => {
     const { from, to } = getPeriodRange(period, dateValueStr || dateValue);
     const fromTime = new Date(from).getTime();
     const toTime = new Date(to).getTime();
@@ -334,22 +359,19 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     pickingNormal: 0, pickingExpress: 0, pickingOE: 0,
     packingNormal: 0, packingExpress: 0, packingOE: 0,
     pickingTOsSet: new Set<string>(), packingHUsSet: new Set<string>(),
-    pickingNormalTOsSet: new Set<string>(), pickingExpressTOsSet: new Set<string>(), pickingOETOsSet: new Set<string>(),
-    packingNormalHUsSet: new Set<string>(), packingExpressHUsSet: new Set<string>(), packingOEHUsSet: new Set<string>(),
   });
 
-  const processData = (map: Map<any, any>, extractKey: (d: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => any) => {
+  const processData = (map: Map<any, any>, extractKey: (d: any) => any) => {
     pickingData.forEach(p => {
       const key = extractKey(p.confirmed_at);
       if (map.has(key)) {
         const row = map.get(key);
         row.picking += p.quantity;
         const cat = p.category || 'Normal';
-        const toKey = `${p.to_number}-${p.to_item || '0'}`;
-        if (cat === 'Express') { row.pickingExpress += p.quantity; row.pickingExpressTOsSet.add(toKey); }
-        else if (cat === 'OE') { row.pickingOE += p.quantity; row.pickingOETOsSet.add(toKey); }
-        else { row.pickingNormal += p.quantity; row.pickingNormalTOsSet.add(toKey); }
-        row.pickingTOsSet.add(toKey);
+        if (cat === 'Express') row.pickingExpress += p.quantity;
+        else if (cat === 'OE') row.pickingOE += p.quantity;
+        else row.pickingNormal += p.quantity;
+        row.pickingTOsSet.add(`${p.to_number}-${p.to_item || Math.random()}`);
       }
     });
     packingData.forEach(p => {
@@ -359,9 +381,9 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
         const row = map.get(key);
         row.packing += (p.quantity || 0);
         const cat = p.category || 'Normal';
-        if (cat === 'Express') { row.packingExpress += (p.quantity || 0); row.packingExpressHUsSet.add(p.internal_hu); }
-        else if (cat === 'OE') { row.packingOE += (p.quantity || 0); row.packingOEHUsSet.add(p.internal_hu); }
-        else { row.packingNormal += (p.quantity || 0); row.packingNormalHUsSet.add(p.internal_hu); }
+        if (cat === 'Express') row.packingExpress += (p.quantity || 0);
+        else if (cat === 'OE') row.packingOE += (p.quantity || 0);
+        else row.packingNormal += (p.quantity || 0);
         row.packingHUsSet.add(p.internal_hu);
       }
     });
@@ -371,15 +393,15 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     const map = new Map<string, any>();
     hourlySlots.forEach(slot => map.set(`${slot.start} - ${slot.end}`, { time: slot.start, fullTime: `${slot.start} - ${slot.end}`, ...initCounters() }));
     processData(map, (d) => getSlot(d));
-    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
   }
 
   if (period === "week") {
     const days = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
     const map = new Map<number, any>();
     for (let i = 1; i <= 7; i++) map.set(i, { time: days[i-1], fullTime: days[i-1], ...initCounters() });
-    processData(map, (d) => { const day = new Date(d).getDay(); return day === 0 ? 7 : day; });
-    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
+    processData(map, (d) => { let day = new Date(d).getDay(); return day === 0 ? 7 : day; });
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
   }
 
   if (period === "month") {
@@ -389,7 +411,7 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     const map = new Map<number, any>();
     for (let i = 1; i <= daysInMonth; i++) map.set(i, { time: String(i), fullTime: `${i}.`, ...initCounters() });
     processData(map, (d) => new Date(d).getDate());
-    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
+    return Array.from(map.values()).map(d => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
   }
 
   const map = new Map<string, any>();
@@ -398,11 +420,11 @@ export function aggregateToChartData(pickingData: PickingRecord[], packingData: 
     if (!map.has(key)) map.set(key, { time: key.substring(5), fullTime: key, ...initCounters() });
     return key;
   });
-  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size, pickingNormalTOs: d.pickingNormalTOsSet.size, pickingExpressTOs: d.pickingExpressTOsSet.size, pickingOETOs: d.pickingOETOsSet.size, packingNormalHUs: d.packingNormalHUsSet.size, packingExpressHUs: d.packingExpressHUsSet.size, packingOEHUs: d.packingOEHUsSet.size }));
+  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => ({ ...d, pickingTOs: d.pickingTOsSet.size, packingHUs: d.packingHUsSet.size }));
 }
 
 export function aggregateShiftStats(pickingData: PickingRecord[], packingData: PackingRecord[]) {
-  const initT = () => ({ pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>(), pickingNormal: 0, pickingExpress: 0, pickingOE: 0, packingNormal: 0, packingExpress: 0, packingOE: 0, pickingNormalTOs: new Set<string>(), pickingExpressTOs: new Set<string>(), pickingOETOs: new Set<string>(), packingNormalHUs: new Set<string>(), packingExpressHUs: new Set<string>(), packingOEHUs: new Set<string>() });
+  const initT = () => ({ pickingKs: 0, packingKs: 0, pickingTOs: new Set<string>(), packingHUs: new Set<string>(), weight: 0, operators: new Set<string>(), pickingNormal: 0, pickingExpress: 0, pickingOE: 0, packingNormal: 0, packingExpress: 0, packingOE: 0 });
   const a = initT();
   const b = initT();
 
@@ -411,14 +433,13 @@ export function aggregateShiftStats(pickingData: PickingRecord[], packingData: P
     const t = getShiftLabel(new Date(p.confirmed_at)) === "A" ? a : b;
     t.pickingKs += p.quantity;
     t.weight += (p.weight || 0);
-    const toKey = `${p.to_number}-${p.to_item || '0'}`;
-    t.pickingTOs.add(toKey);
+    t.pickingTOs.add(`${p.to_number}-${p.to_item || Math.random()}`);
     if (p.operator) t.operators.add(p.operator);
     
     const cat = p.category || 'Normal';
-    if (cat === 'Express') { t.pickingExpress += p.quantity; t.pickingExpressTOs.add(toKey); }
-    else if (cat === 'OE') { t.pickingOE += p.quantity; t.pickingOETOs.add(toKey); }
-    else { t.pickingNormal += p.quantity; t.pickingNormalTOs.add(toKey); }
+    if (cat === 'Express') t.pickingExpress += p.quantity;
+    else if (cat === 'OE') t.pickingOE += p.quantity;
+    else t.pickingNormal += p.quantity;
   });
   
   packingData.forEach(p => {
@@ -430,13 +451,13 @@ export function aggregateShiftStats(pickingData: PickingRecord[], packingData: P
     if (p.operator) t.operators.add(p.operator);
 
     const cat = p.category || 'Normal';
-    if (cat === 'Express') { t.packingExpress += (p.quantity || 0); t.packingExpressHUs.add(p.internal_hu); }
-    else if (cat === 'OE') { t.packingOE += (p.quantity || 0); t.packingOEHUs.add(p.internal_hu); }
-    else { t.packingNormal += (p.quantity || 0); t.packingNormalHUs.add(p.internal_hu); }
+    if (cat === 'Express') t.packingExpress += (p.quantity || 0);
+    else if (cat === 'OE') t.packingOE += (p.quantity || 0);
+    else t.packingNormal += (p.quantity || 0);
   });
 
   return {
-    a: { ...a, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, operators: a.operators.size, pickingNormalTOs: a.pickingNormalTOs.size, pickingExpressTOs: a.pickingExpressTOs.size, pickingOETOs: a.pickingOETOs.size, packingNormalHUs: a.packingNormalHUs.size, packingExpressHUs: a.packingExpressHUs.size, packingOEHUs: a.packingOEHUs.size },
-    b: { ...b, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, operators: b.operators.size, pickingNormalTOs: b.pickingNormalTOs.size, pickingExpressTOs: b.pickingExpressTOs.size, pickingOETOs: b.pickingOETOs.size, packingNormalHUs: b.packingNormalHUs.size, packingExpressHUs: b.packingExpressHUs.size, packingOEHUs: b.packingOEHUs.size },
+    a: { ...a, pickingTOs: a.pickingTOs.size, packingHUs: a.packingHUs.size, operators: a.operators.size },
+    b: { ...b, pickingTOs: b.pickingTOs.size, packingHUs: b.packingHUs.size, operators: b.operators.size },
   };
 }
