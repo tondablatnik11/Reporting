@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ComposedChart, AreaChart, Area, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { PackageSearch, Box, Users } from "lucide-react";
 import { useData, getShiftLabel } from "@/lib/data-context";
 import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-period-data";
@@ -148,6 +148,7 @@ export default function HourlyTrendPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* OPRAVA: Skrytí AreaChart, nahrazeno zpět čistým BarChart */}
         <div className="glass-panel p-6">
           <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
             <PackageSearch className="w-5 h-5 text-blue-400" /> Struktura Picking zakázek (TO)
@@ -155,21 +156,16 @@ export default function HourlyTrendPage() {
           <div className="h-[280px] w-full">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorNorm" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4}/><stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorOe" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff0a" vertical={false} />
-                  <XAxis dataKey={xLabel} stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Area type="monotone" dataKey="pickingNormal" name="Normální (TO)" stackId="1" stroke="#10b981" fill="url(#colorNorm)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="pickingExpress" name="Express (TO)" stackId="1" stroke="#f59e0b" fill="url(#colorExp)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="pickingOE" name="OE (TO)" stackId="1" stroke="#ef4444" fill="url(#colorOe)" strokeWidth={2} />
-                </AreaChart>
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey={xLabel} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                  <Bar dataKey="pickingNormal" name="Normální (TO)" stackId="cat" fill="#10b981" />
+                  <Bar dataKey="pickingExpress" name="Express (TO)" stackId="cat" fill="#f59e0b" />
+                  <Bar dataKey="pickingOE" name="OE (TO)" stackId="cat" fill="#ef4444" />
+                </BarChart>
               </ResponsiveContainer>
             )}
           </div>
@@ -182,21 +178,16 @@ export default function HourlyTrendPage() {
           <div className="h-[280px] w-full">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám...</div> : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorNormP" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorExpP" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4}/><stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorOeP" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff0a" vertical={false} />
-                  <XAxis dataKey={xLabel} stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Area type="monotone" dataKey="packingNormal" name="Normální (HU)" stackId="1" stroke="#10b981" fill="url(#colorNormP)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="packingExpress" name="Express (HU)" stackId="1" stroke="#f59e0b" fill="url(#colorExpP)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="packingOE" name="OE (HU)" stackId="1" stroke="#ef4444" fill="url(#colorOeP)" strokeWidth={2} />
-                </AreaChart>
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey={xLabel} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                  <Bar dataKey="packingNormal" name="Normální (HU)" stackId="cat" fill="#10b981" />
+                  <Bar dataKey="packingExpress" name="Express (HU)" stackId="cat" fill="#f59e0b" />
+                  <Bar dataKey="packingOE" name="OE (HU)" stackId="cat" fill="#ef4444" />
+                </BarChart>
               </ResponsiveContainer>
             )}
           </div>
