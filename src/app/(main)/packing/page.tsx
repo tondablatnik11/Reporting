@@ -173,7 +173,7 @@ export default function PackingPage() {
         </div>
 
         <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (Ks)</h3>
+          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (HU)</h3>
           <div className="h-[280px] w-full">
             {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
               <ResponsiveContainer width="100%" height="100%">
@@ -188,9 +188,9 @@ export default function PackingPage() {
                   <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Area type="monotone" dataKey="packingNormal" name="Normální (Ks)" stackId="1" stroke="#10b981" fill="url(#colorNormPack)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="packingExpress" name="Express (Ks)" stackId="1" stroke="#f59e0b" fill="url(#colorExpPack)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="packingOE" name="OE (Ks)" stackId="1" stroke="#ef4444" fill="url(#colorOePack)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingNormal" name="Normální (HU)" stackId="1" stroke="#10b981" fill="url(#colorNormPack)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingExpress" name="Express (HU)" stackId="1" stroke="#f59e0b" fill="url(#colorExpPack)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="packingOE" name="OE (HU)" stackId="1" stroke="#ef4444" fill="url(#colorOePack)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
