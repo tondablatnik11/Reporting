@@ -142,7 +142,10 @@ export interface Database {
         Returns: any
       }
       get_shift_benchmarking_data: {
-        Args: Record<string, any>
+        Args: {
+          p_start_date: string
+          p_end_date: string
+        }
         Returns: any
       }
     }
