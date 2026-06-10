@@ -1,204 +1,290 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, PackageSearch, Box, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { useMemo, useState } from "react";
+import { 
+  LayoutDashboard, PackageSearch, Box, Users, 
+  TrendingUp, AlertOctagon, Trophy, Zap, Layers
+} from "lucide-react";
+import { 
+  ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, 
+  Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
+} from "recharts";
+import { useData } from "@/lib/data-context";
+import { usePeriodData, aggregateToChartData, aggregateShiftStats, type Period } from "@/lib/use-period-data";
+import PeriodSelector from "@/components/ui/PeriodSelector";
+
+const PRIORITIES_COLORS = { Normal: "#10b981", Express: "#f59e0b", OE: "#ef4444" };
+const SHIFT_COLORS = { A: "#10b981", B: "#fbbf24" };
 
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [period, setPeriod] = useState<Period>("day");
+  const [dateValue, setDateValue] = useState<string>(todayStr);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const { pickingData: localPicking, packingData: localPacking, likpData } = useData();
+  const { pickingData, packingData, loading } = usePeriodData(period, localPicking, localPacking, dateValue, false, "", likpData);
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data: summaryData, error: summaryError } = await supabase.rpc('get_daily_summary');
-      if (summaryError) throw summaryError;
-      setData(summaryData || []);
-    } catch (err: any) {
-      console.error("Dashboard fetch error:", err);
-      setError(err.message || "Nepodařilo se načíst data z databáze.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // 1. Agregace pro hlavní graf
+  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
 
-  const calculateTrend = (current: number, previous: number) => {
-    if (previous === 0 && current === 0) return { percent: 0, isPositive: true, text: "Beze změny" };
-    if (previous === 0) return { percent: 100, isPositive: true, text: "+100%" };
-    const diff = current - previous;
-    const percent = Math.round((diff / previous) * 100);
+  // 2. Základní KPI
+  const totalPickKs = pickingData.reduce((s, r) => s + r.quantity, 0);
+  const totalPackKs = packingData.reduce((s, r) => s + (r.quantity || 0), 0);
+  const totalTOs = new Set(pickingData.map(r => `${r.to_number}-${r.to_item || Math.random()}`)).size;
+  const totalHUs = new Set(packingData.map(r => r.internal_hu)).size;
+  const uniqueOperators = new Set([
+    ...pickingData.filter(r => r.operator).map(r => r.operator),
+    ...packingData.filter(r => r.operator).map(r => r.operator)
+  ]).size;
+
+  // 3. Agregace pro Priority (Normal/Express/OE)
+  const priorityStats = useMemo(() => {
+    let nTo = 0, eTo = 0, oTo = 0;
+    const seenTOs = new Set<string>();
+
+    pickingData.forEach(p => {
+      const key = `${p.to_number}-${p.to_item || Math.random()}`;
+      if (!seenTOs.has(key)) {
+        seenTOs.add(key);
+        const cat = p.category || 'Normal';
+        if (cat === 'Express') eTo++;
+        else if (cat === 'OE') oTo++;
+        else nTo++;
+      }
+    });
+
+    const total = nTo + eTo + oTo;
+    return [
+      { name: 'Normal', value: nTo, pct: total > 0 ? (nTo/total)*100 : 0, color: PRIORITIES_COLORS.Normal },
+      { name: 'Express', value: eTo, pct: total > 0 ? (eTo/total)*100 : 0, color: PRIORITIES_COLORS.Express },
+      { name: 'OE', value: oTo, pct: total > 0 ? (oTo/total)*100 : 0, color: PRIORITIES_COLORS.OE },
+    ];
+  }, [pickingData]);
+
+  // 4. Srovnání Směn (Mini)
+  const shiftStats = useMemo(() => aggregateShiftStats(pickingData, packingData), [pickingData, packingData]);
+  const shiftChartData = [
+    { name: 'Směna A', Picking: shiftStats.a.pickingTOs, Packing: shiftStats.a.packingHUs },
+    { name: 'Směna B', Picking: shiftStats.b.pickingTOs, Packing: shiftStats.b.packingHUs },
+  ];
+
+  // 5. Leaderboard Operátorů
+  const topOperators = useMemo(() => {
+    const pickers = new Map<string, number>();
+    const packers = new Map<string, number>();
+
+    pickingData.forEach(p => {
+      if (!p.operator) return;
+      pickers.set(p.operator, (pickers.get(p.operator) || 0) + 1); // Počítáme řádky/TO
+    });
+    
+    packingData.forEach(p => {
+      if (!p.operator) return;
+      packers.set(p.operator, (packers.get(p.operator) || 0) + 1); // Počítáme HU
+    });
+
     return {
-      percent: Math.abs(percent),
-      isPositive: diff >= 0,
-      text: `${diff >= 0 ? '+' : '-'}${Math.abs(percent)}%`
+      pickers: Array.from(pickers.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5),
+      packers: Array.from(packers.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5),
     };
-  };
+  }, [pickingData, packingData]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="glass-panel p-8 text-center space-y-4">
-        <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
-        <h2 className="text-xl font-bold text-white">Chyba při načítání dat</h2>
-        <p className="text-white/60">{error}</p>
-        <p className="text-sm text-amber-400">Ujisti se, že jsi spustil migrační skript `supabase_migration_datacube.sql` v Supabase.</p>
-        <button onClick={loadData} className="glass-button-primary mt-4">Zkusit znovu</button>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="glass-panel p-8 text-center space-y-4">
-        <Box className="w-12 h-12 text-white/20 mx-auto" />
-        <h2 className="text-xl font-bold text-white">Žádná data</h2>
-        <p className="text-white/60">V databázi zatím nejsou žádná zpracovaná data. Nahraj nejprve Excel reporty v záložce Import.</p>
-      </div>
-    );
-  }
-
-  // Nejdřív nejnovější den (yesterday = poslední den s daty)
-  const yesterday = data[0];
-  const dayBefore = data.length > 1 ? data[1] : null;
-
-  const pickTrend = dayBefore ? calculateTrend(yesterday.pick_tos, dayBefore.pick_tos) : { percent: 0, isPositive: true, text: "-" };
-  const packTrend = dayBefore ? calculateTrend(yesterday.pack_hus, dayBefore.pack_hus) : { percent: 0, isPositive: true, text: "-" };
-
-  const totalOrders = yesterday.normal_tos + yesterday.express_tos + yesterday.oe_tos;
-  const expressPct = totalOrders > 0 ? Math.round((yesterday.express_tos / totalOrders) * 100) : 0;
-  const normalPct = totalOrders > 0 ? Math.round((yesterday.normal_tos / totalOrders) * 100) : 0;
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' });
-  };
+  const xLabel = period === "day" ? "fullTime" : "time";
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
+    <div className="space-y-6 animate-fade-in-up pb-10">
+      
+      {/* HEADER */}
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-wide">Ranní Manažerský Report</h1>
-          <p className="text-white/40 text-sm mt-1">Shrnutí výsledků za {formatDate(yesterday.report_date)}</p>
+          <h1 className="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
+            <LayoutDashboard className="w-7 h-7 text-emerald-400" /> Manažerský Přehled
+          </h1>
+          <p className="text-white/40 text-sm mt-1">Shrnutí výkonu, priorit a kapacit za vybrané období.</p>
         </div>
-        <button onClick={loadData} className="glass-button-primary text-sm flex items-center gap-2">
-          <RefreshCw className="w-4 h-4" /> Aktualizovat data
-        </button>
+        <PeriodSelector 
+          period={period} 
+          onChangePeriod={setPeriod} 
+          loading={loading}
+          dateValue={dateValue}
+          onChangeDate={setDateValue}
+        />
       </div>
 
-      {/* MORNING BRIEF TEXT */}
-      <div className="glass-panel p-8 border-l-4 border-l-blue-500 relative overflow-hidden group">
-        <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-          <TrendingUp className="w-32 h-32 text-blue-400" />
-        </div>
-        <h2 className="text-sm font-bold text-blue-400 uppercase tracking-widest mb-4">Morning Brief</h2>
-        <div className="relative z-10 text-lg text-white/90 leading-relaxed max-w-4xl space-y-3">
-          <p>
-            Za včerejší den <strong className="text-white">({formatDate(yesterday.report_date)})</strong> jsme úspěšně zpracovali <strong className="text-blue-400">{yesterday.pick_tos.toLocaleString()} TO</strong> (přes {yesterday.pick_qty.toLocaleString()} Ks) na pickingu a zabalili <strong className="text-purple-400">{yesterday.pack_hus.toLocaleString()} HU</strong>.
-          </p>
-          {dayBefore && (
-            <p>
-              V porovnání s předchozím dnem je picking <strong className={pickTrend.isPositive ? "text-emerald-400" : "text-red-400"}>{pickTrend.text}</strong> a packing <strong className={packTrend.isPositive ? "text-emerald-400" : "text-red-400"}>{packTrend.text}</strong>.
-            </p>
-          )}
-          <p>
-            Struktura zakázek byla z <strong className="text-white">{normalPct}% Normal</strong> a <strong className="text-amber-400">{expressPct}% Express</strong>. Do kategorie OE spadalo celkem {yesterday.oe_tos.toLocaleString()} TO.
-          </p>
-        </div>
-      </div>
-
-      {/* METRIKY */}
+      {/* KPI KARTY */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="glass-panel p-6 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <PackageSearch className="w-20 h-20 text-blue-400" />
-          </div>
-          <div className="relative z-10 flex flex-col justify-between h-full">
+        <div className="glass-panel p-6 border-l-4 border-l-blue-500/80 hover:bg-white/[0.03] transition-colors">
+          <div className="flex items-start justify-between">
             <div>
-              <div className="text-3xl font-black text-white tracking-tight">{yesterday.pick_tos.toLocaleString()}</div>
-              <div className="text-sm font-bold text-blue-400 mt-1">{yesterday.pick_qty.toLocaleString()} Ks</div>
-              <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Vypickované TO</div>
+              <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Vychystáno (Picking)</p>
+              <h3 className="text-3xl font-black text-white">{totalTOs.toLocaleString()} <span className="text-sm font-medium text-white/30">TO</span></h3>
+              <p className="text-sm font-bold text-blue-400 mt-1">{totalPickKs.toLocaleString()} Ks</p>
             </div>
-            {dayBefore && (
-              <div className="mt-4 flex items-center gap-1.5">
-                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${pickTrend.isPositive ? 'trend-up' : 'trend-down'}`}>
-                  {pickTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                  {pickTrend.text}
-                </div>
-                <span className="text-[10px] text-white/30 uppercase tracking-wider">Oproti {formatDate(dayBefore.report_date)}</span>
-              </div>
-            )}
+            <div className="p-3 bg-blue-500/10 rounded-xl"><PackageSearch className="w-6 h-6 text-blue-400" /></div>
           </div>
         </div>
 
-        <div className="glass-panel p-6 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Box className="w-20 h-20 text-purple-400" />
-          </div>
-          <div className="relative z-10 flex flex-col justify-between h-full">
+        <div className="glass-panel p-6 border-l-4 border-l-purple-500/80 hover:bg-white/[0.03] transition-colors">
+          <div className="flex items-start justify-between">
             <div>
-              <div className="text-3xl font-black text-white tracking-tight">{yesterday.pack_hus.toLocaleString()}</div>
-              <div className="text-sm font-bold text-purple-400 mt-1">{yesterday.pack_qty.toLocaleString()} Ks</div>
-              <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Zabalené HU</div>
+              <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Zabaleno (Packing)</p>
+              <h3 className="text-3xl font-black text-white">{totalHUs.toLocaleString()} <span className="text-sm font-medium text-white/30">HU</span></h3>
+              <p className="text-sm font-bold text-purple-400 mt-1">{totalPackKs.toLocaleString()} Ks</p>
             </div>
-            {dayBefore && (
-              <div className="mt-4 flex items-center gap-1.5">
-                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md ${packTrend.isPositive ? 'trend-up' : 'trend-down'}`}>
-                  {packTrend.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                  {packTrend.text}
-                </div>
-                <span className="text-[10px] text-white/30 uppercase tracking-wider">Oproti {formatDate(dayBefore.report_date)}</span>
-              </div>
-            )}
+            <div className="p-3 bg-purple-500/10 rounded-xl"><Box className="w-6 h-6 text-purple-400" /></div>
           </div>
         </div>
 
-        <div className="glass-panel p-6 col-span-1 lg:col-span-2 relative overflow-hidden group">
-          <div className="relative z-10">
-            <h3 className="text-sm font-bold text-white/50 uppercase tracking-wider mb-4">Kategorie zakázek (Picking)</h3>
-            <div className="space-y-4">
-              
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-white/70">Normal</span>
-                  <span className="font-bold text-white">{yesterday.normal_tos.toLocaleString()} TO ({normalPct}%)</span>
-                </div>
-                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${normalPct}%` }}></div>
-                </div>
-              </div>
+        <div className="glass-panel p-6 border-l-4 border-l-emerald-500/80 hover:bg-white/[0.03] transition-colors">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Produktivita</p>
+              <h3 className="text-3xl font-black text-white">
+                {totalTOs > 0 ? (totalPickKs / totalTOs).toFixed(1) : "0"} <span className="text-sm font-medium text-white/30">Ks / TO</span>
+              </h3>
+              <p className="text-sm font-bold text-emerald-400 mt-1">Hustota zakázek</p>
+            </div>
+            <div className="p-3 bg-emerald-500/10 rounded-xl"><Layers className="w-6 h-6 text-emerald-400" /></div>
+          </div>
+        </div>
 
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-white/70">Express</span>
-                  <span className="font-bold text-amber-400">{yesterday.express_tos.toLocaleString()} TO ({expressPct}%)</span>
-                </div>
-                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                  <div className="h-full bg-amber-400 rounded-full" style={{ width: `${expressPct}%` }}></div>
-                </div>
-              </div>
+        <div className="glass-panel p-6 border-l-4 border-l-amber-500/80 hover:bg-white/[0.03] transition-colors">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
+              <h3 className="text-3xl font-black text-white">{uniqueOperators}</h3>
+              <p className="text-sm font-bold text-amber-400 mt-1">Aktivních pracovníků</p>
+            </div>
+            <div className="p-3 bg-amber-500/10 rounded-xl"><Users className="w-6 h-6 text-amber-400" /></div>
+          </div>
+        </div>
+      </div>
 
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-white/70">OE</span>
-                  <span className="font-bold text-purple-400">{yesterday.oe_tos.toLocaleString()} TO</span>
-                </div>
-              </div>
+      {/* HLAVNÍ GRAF VÝKONU */}
+      <div className="glass-panel p-6">
+        <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-emerald-400" /> Vývoj celkového objemu (TO vs HU)
+        </h3>
+        <p className="text-xs text-white/40 mb-6">Porovnání dynamiky mezi vychystáváním a balením. Linky ukazují trend, sloupce reálný objem.</p>
+        <div className="h-[350px] w-full">
+          {loading ? (
+            <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                <XAxis dataKey={xLabel} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                <Legend wrapperStyle={{ paddingTop: '16px', fontSize: '11px' }} />
+                <Bar dataKey="pickingTOs" name="Picking (TO)" fill="#3b82f6" fillOpacity={0.8} radius={[3,3,0,0]} />
+                <Bar dataKey="packingHUs" name="Packing (HU)" fill="#a855f7" fillOpacity={0.8} radius={[3,3,0,0]} />
+                <Line type="monotone" dataKey="pickingTOs" name="Trend Picking" stroke="#60d4ff" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="packingHUs" name="Trend Packing" stroke="#e4b4ff" strokeWidth={3} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
 
+      {/* STRUKTURA A SROVNÁNÍ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* KOLÁČOVÝ GRAF PRIORIT */}
+        <div className="glass-panel p-6">
+          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+            <AlertOctagon className="w-5 h-5 text-rose-400" /> Mix Priorit (Picking TO)
+          </h3>
+          <p className="text-xs text-white/40 mb-2">Jak velkou část kapacity tvořily urgentní zakázky?</p>
+          <div className="h-[220px] w-full relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={priorityStats} innerRadius={60} outerRadius={85} paddingAngle={4} dataKey="value" stroke="none">
+                  {priorityStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                </Pie>
+                <Tooltip 
+                  formatter={(value: any, name: any, props: any) => [`${value} TO (${props.payload.pct.toFixed(1)}%)`, name]}
+                  contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} 
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Popisek uprostřed grafu */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-2">
+              <span className="text-2xl font-black text-white">{totalTOs}</span>
+              <span className="text-xs font-semibold text-white/40 uppercase">TO Celkem</span>
+            </div>
+          </div>
+          <div className="flex justify-center gap-4 mt-2">
+            {priorityStats.map(s => (
+              <div key={s.name} className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
+                <span className="text-xs text-white/60">{s.name} ({s.pct.toFixed(0)}%)</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* MINI SROVNÁNÍ SMĚN */}
+        <div className="glass-panel p-6">
+          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-400" /> Výkon Směn (A vs B)
+          </h3>
+          <p className="text-xs text-white/40 mb-2">Rychlé srovnání hrubého výkonu na objemy.</p>
+          <div className="h-[220px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={shiftChartData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
+                <XAxis type="number" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis dataKey="name" type="category" stroke="rgba(255,255,255,0.6)" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
+                <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                <Bar dataKey="Picking" name="Picking (TO)" fill="#10b981" radius={[0,3,3,0]} barSize={20} />
+                <Bar dataKey="Packing" name="Packing (HU)" fill="#fbbf24" radius={[0,3,3,0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* LEADERBOARD OPERÁTORŮ */}
+        <div className="glass-panel p-6 flex flex-col">
+          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-yellow-400" /> Top Operátoři
+          </h3>
+          <p className="text-xs text-white/40 mb-4">Pět nejaktivnějších operátorů podle objemu.</p>
+          
+          <div className="flex-1 grid grid-cols-2 gap-4">
+            {/* Pickeři */}
+            <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+              <h4 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-1.5 border-b border-white/5 pb-2">
+                <PackageSearch className="w-3.5 h-3.5" /> Best Pickeři
+              </h4>
+              <div className="space-y-2.5">
+                {topOperators.pickers.length > 0 ? topOperators.pickers.map(([name, count], i) => (
+                  <div key={name} className="flex items-center justify-between text-sm">
+                    <span className="text-white/80 truncate pr-2"><span className="text-white/30 mr-1">{i+1}.</span> {name}</span>
+                    <span className="font-bold text-white">{count}</span>
+                  </div>
+                )) : <div className="text-xs text-white/30">Žádná data</div>}
+              </div>
+            </div>
+
+            {/* Packeři */}
+            <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+              <h4 className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-1.5 border-b border-white/5 pb-2">
+                <Box className="w-3.5 h-3.5" /> Best Packeři
+              </h4>
+              <div className="space-y-2.5">
+                {topOperators.packers.length > 0 ? topOperators.packers.map(([name, count], i) => (
+                  <div key={name} className="flex items-center justify-between text-sm">
+                    <span className="text-white/80 truncate pr-2"><span className="text-white/30 mr-1">{i+1}.</span> {name}</span>
+                    <span className="font-bold text-white">{count}</span>
+                  </div>
+                )) : <div className="text-xs text-white/30">Žádná data</div>}
+              </div>
             </div>
           </div>
         </div>
+
       </div>
 
     </div>
