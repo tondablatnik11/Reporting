@@ -1,169 +1,153 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { supabase } from "@/lib/supabase";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  Line, ReferenceLine, Cell, ComposedChart 
+  Line, ReferenceLine, Cell, ComposedChart, AreaChart, Area 
 } from "recharts";
-import { Loader2, AlertCircle, Trophy, Swords, BarChart3, Users } from "lucide-react";
-import { getISOWeekNumber, getShiftLabel, useData } from "@/lib/data-context";
-import { usePeriodData } from "@/lib/use-period-data";
+import { Loader2, AlertCircle, Trophy, Swords } from "lucide-react";
+import { getISOWeekNumber, getShiftConfig } from "@/lib/data-context";
 
 type TimeRange = '30d' | '90d' | 'ytd' | 'all';
 type Grouping = 'day' | 'week' | 'month';
 
+function mapShiftNameToAB(dateStr: string, shiftName: string) {
+  const d = new Date(dateStr);
+  const weekNum = getISOWeekNumber(d);
+  const isEvenWeek = weekNum % 2 === 0;
+  const config = getShiftConfig();
+  const shiftAIsMorning = config.evenWeekShiftAMorning ? isEvenWeek : !isEvenWeek;
+  const isMorning = shiftName === 'Ranní';
+  if (shiftAIsMorning) return isMorning ? "A" : "B";
+  return isMorning ? "B" : "A";
+}
+
 export default function ShiftBenchmarkingPage() {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('90d');
   const [grouping, setGrouping] = useState<Grouping>('week');
 
-  // Stáhneme VŠECHNA dostupná data (period="all"), filtrovat budeme lokálně v useMemo, ať je to bleskově rychlé
-  const { pickingData: localPicking, packingData: localPacking, likpData } = useData();
-  const { pickingData, packingData, loading } = usePeriodData('all', localPicking, localPacking, todayStr, false, "", likpData);
+  // Načítání dat se spouští při každé změně TimeRange - díky databázi to bude trvat milisekundy
+  useEffect(() => {
+    loadData(timeRange);
+  }, [timeRange]);
 
-  const currentWeek = getISOWeekNumber(new Date());
-  const isEvenWeek = currentWeek % 2 === 0;
+  const loadData = async (range: TimeRange) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const end = new Date();
+      let start = new Date();
+      if (range === '30d') start.setDate(start.getDate() - 30);
+      else if (range === '90d') start.setDate(start.getDate() - 90);
+      else if (range === 'ytd') start = new Date(start.getFullYear(), 0, 1);
+      else if (range === 'all') start = new Date(2020, 0, 1);
+
+      const { data: shiftData, error: shiftError } = await supabase.rpc('get_shift_benchmarking_data', {
+        p_start_date: start.toISOString().split('T')[0],
+        p_end_date: end.toISOString().split('T')[0]
+      });
+
+      if (shiftError) throw shiftError;
+      setData(shiftData || []);
+    } catch (err: any) {
+      console.error("Shifts fetch error:", err);
+      setError(err.message || "Nepodařilo se načíst data z databáze.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const { chartData, stats, orderTypeStats } = useMemo(() => {
-    // 1. FILTRACE PODLE ZVOLENÉHO ČASU
-    let pData = pickingData;
-    let pckData = packingData;
-
-    if (timeRange === '30d') {
-      const limit = new Date(); limit.setDate(limit.getDate() - 30);
-      pData = pData.filter(d => d.confirmed_at && new Date(d.confirmed_at) >= limit);
-      pckData = pckData.filter(d => d.created_at && new Date(d.created_at) >= limit);
-    } else if (timeRange === '90d') {
-      const limit = new Date(); limit.setDate(limit.getDate() - 90);
-      pData = pData.filter(d => d.confirmed_at && new Date(d.confirmed_at) >= limit);
-      pckData = pckData.filter(d => d.created_at && new Date(d.created_at) >= limit);
-    } else if (timeRange === 'ytd') {
-      const y = new Date().getFullYear();
-      pData = pData.filter(d => d.confirmed_at && new Date(d.confirmed_at).getFullYear() === y);
-      pckData = pckData.filter(d => d.created_at && new Date(d.created_at).getFullYear() === y);
-    }
-
-    // 2. INICIALIZACE STATISTIK PRO CELÉ OBDOBÍ
-    let aWins = 0; let bWins = 0; let draws = 0;
-    const oStats = {
-      a_tos: new Set<string>(), b_tos: new Set<string>(),
-      a_hus: new Set<string>(), b_hus: new Set<string>(),
-      a_normal_tos: new Set<string>(), a_express_tos: new Set<string>(), a_oe_tos: new Set<string>(),
-      b_normal_tos: new Set<string>(), b_express_tos: new Set<string>(), b_oe_tos: new Set<string>(),
-      a_normal_hus: new Set<string>(), a_express_hus: new Set<string>(), a_oe_hus: new Set<string>(),
-      b_normal_hus: new Set<string>(), b_express_hus: new Set<string>(), b_oe_hus: new Set<string>(),
-      a_operators: new Set<string>(), b_operators: new Set<string>(),
-      a_ks: 0, b_ks: 0, a_pck_ks: 0, b_pck_ks: 0,
-      a_weight: 0, b_weight: 0
-    };
-
-    const groupedMap = new Map<string, any>();
-
-    // 3. POMOCNÉ FUNKCE PRO SESKUPOVÁNÍ
-    const getGroupKey = (dateObj: Date) => {
-      if (grouping === 'week') {
-        const w = getISOWeekNumber(dateObj);
-        return { key: `${dateObj.getFullYear()}-W${w}`, label: `Týden ${w}` };
-      } else if (grouping === 'month') {
-        const m = dateObj.getMonth();
-        return { key: `${dateObj.getFullYear()}-${m}`, label: dateObj.toLocaleDateString('cs-CZ', { month: 'long', year: 'numeric' }) };
-      }
-      return { key: dateObj.toISOString().split('T')[0], label: dateObj.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' }) };
-    };
-
-    const ensureGroup = (dateObj: Date) => {
-      const { key, label } = getGroupKey(dateObj);
-      if (!groupedMap.has(key)) {
-        groupedMap.set(key, { 
-          key, label, date: dateObj, 
-          a_to_set: new Set<string>(), b_to_set: new Set<string>(), 
-          a_hu_set: new Set<string>(), b_hu_set: new Set<string>() 
+    const dailyMap = new Map<string, any>();
+    
+    data.forEach(d => {
+      const shiftAB = mapShiftNameToAB(d.report_date, d.shift_name);
+      if (!dailyMap.has(d.report_date)) {
+        dailyMap.set(d.report_date, {
+            date: d.report_date,
+            A: { tos: 0, norm_to: 0, exp_to: 0, oe_to: 0, qty: 0, hus: 0, norm_hu: 0, exp_hu: 0, oe_hu: 0, pck_qty: 0, wt: 0, ops: 0 },
+            B: { tos: 0, norm_to: 0, exp_to: 0, oe_to: 0, qty: 0, hus: 0, norm_hu: 0, exp_hu: 0, oe_hu: 0, pck_qty: 0, wt: 0, ops: 0 }
         });
       }
-      return groupedMap.get(key);
-    };
-
-    // 4. ZPRACOVÁNÍ PICKINGU (Určení Směny A/B sekundu po sekundě)
-    pData.forEach(p => {
-      if (!p.confirmed_at) return;
-      const dateObj = new Date(p.confirmed_at);
-      const shift = getShiftLabel(dateObj);
-      const toKey = `${p.to_number}-${p.to_item || Math.random()}`;
-      const cat = p.category || 'Normal';
-      
-      const g = ensureGroup(dateObj);
-
-      if (shift === 'A') {
-        g.a_to_set.add(toKey);
-        oStats.a_tos.add(toKey);
-        oStats.a_ks += p.quantity;
-        oStats.a_weight += (p.weight || 0);
-        if (p.operator) oStats.a_operators.add(p.operator);
-        if (cat === 'Express') oStats.a_express_tos.add(toKey);
-        else if (cat === 'OE') oStats.a_oe_tos.add(toKey);
-        else oStats.a_normal_tos.add(toKey);
-      } else {
-        g.b_to_set.add(toKey);
-        oStats.b_tos.add(toKey);
-        oStats.b_ks += p.quantity;
-        oStats.b_weight += (p.weight || 0);
-        if (p.operator) oStats.b_operators.add(p.operator);
-        if (cat === 'Express') oStats.b_express_tos.add(toKey);
-        else if (cat === 'OE') oStats.b_oe_tos.add(toKey);
-        else oStats.b_normal_tos.add(toKey);
-      }
+      const day = dailyMap.get(d.report_date);
+      const t = day[shiftAB];
+      t.tos += Number(d.pick_tos);
+      t.norm_to += Number(d.pick_normal_tos);
+      t.exp_to += Number(d.pick_express_tos);
+      t.oe_to += Number(d.pick_oe_tos);
+      t.qty += Number(d.pick_qty);
+      t.hus += Number(d.pack_hus);
+      t.norm_hu += Number(d.pack_normal_hus);
+      t.exp_hu += Number(d.pack_express_hus);
+      t.oe_hu += Number(d.pack_oe_hus);
+      t.pck_qty += Number(d.pack_qty);
+      t.wt += Number(d.total_weight);
+      t.ops += Number(d.unique_operators);
     });
 
-    // 5. ZPRACOVÁNÍ PACKINGU
-    pckData.forEach(p => {
-      if (!p.created_at) return;
-      const dateObj = new Date(p.created_at);
-      const shift = getShiftLabel(dateObj);
-      const huKey = p.internal_hu;
-      const cat = p.category || 'Normal';
-      
-      const g = ensureGroup(dateObj);
+    const groupedMap = new Map<string, any>();
+    let aTotalTo = 0, bTotalTo = 0, aTotalHu = 0, bTotalHu = 0;
+    let aKs = 0, bKs = 0, aPckKs = 0, bPckKs = 0, aWeight = 0, bWeight = 0;
+    let aOps = 0, bOps = 0, daysCount = 0;
 
-      if (shift === 'A') {
-        g.a_hu_set.add(huKey);
-        oStats.a_hus.add(huKey);
-        oStats.a_pck_ks += (p.quantity || 0);
-        if (p.operator) oStats.a_operators.add(p.operator);
-        if (cat === 'Express') oStats.a_express_hus.add(huKey);
-        else if (cat === 'OE') oStats.a_oe_hus.add(huKey);
-        else oStats.a_normal_hus.add(huKey);
-      } else {
-        g.b_hu_set.add(huKey);
-        oStats.b_hus.add(huKey);
-        oStats.b_pck_ks += (p.quantity || 0);
-        if (p.operator) oStats.b_operators.add(p.operator);
-        if (cat === 'Express') oStats.b_express_hus.add(huKey);
-        else if (cat === 'OE') oStats.b_oe_hus.add(huKey);
-        else oStats.b_normal_hus.add(huKey);
+    let a_normal_to = 0, a_express_to = 0, a_oe_to = 0;
+    let b_normal_to = 0, b_express_to = 0, b_oe_to = 0;
+    let a_normal_hu = 0, a_express_hu = 0, a_oe_hu = 0;
+    let b_normal_hu = 0, b_express_hu = 0, b_oe_hu = 0;
+
+    Array.from(dailyMap.values()).forEach(d => {
+      const dateObj = new Date(d.date);
+      let key = d.date;
+      let label = dateObj.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+
+      if (grouping === 'week') {
+        const w = getISOWeekNumber(dateObj);
+        key = `${dateObj.getFullYear()}-W${w}`;
+        label = `Týden ${w}`;
+      } else if (grouping === 'month') {
+        const m = dateObj.getMonth();
+        key = `${dateObj.getFullYear()}-${m}`;
+        label = dateObj.toLocaleDateString('cs-CZ', { month: 'long', year: 'numeric' });
       }
+
+      if (!groupedMap.has(key)) {
+        groupedMap.set(key, { key, label, a_tos: 0, b_tos: 0, a_hus: 0, b_hus: 0 });
+      }
+      const g = groupedMap.get(key)!;
+      g.a_tos += d.A.tos; g.b_tos += d.B.tos;
+      g.a_hus += d.A.hus; g.b_hus += d.B.hus;
+
+      aTotalTo += d.A.tos; bTotalTo += d.B.tos;
+      aTotalHu += d.A.hus; bTotalHu += d.B.hus;
+      aKs += d.A.qty; bKs += d.B.qty;
+      aPckKs += d.A.pck_qty; bPckKs += d.B.pck_qty;
+      aWeight += d.A.wt; bWeight += d.B.wt;
+      aOps += d.A.ops; bOps += d.B.ops;
+      
+      a_normal_to += d.A.norm_to; a_express_to += d.A.exp_to; a_oe_to += d.A.oe_to;
+      b_normal_to += d.B.norm_to; b_express_to += d.B.exp_to; b_oe_to += d.B.oe_to;
+      a_normal_hu += d.A.norm_hu; a_express_hu += d.A.exp_hu; a_oe_hu += d.A.oe_hu;
+      b_normal_hu += d.B.norm_hu; b_express_hu += d.B.exp_hu; b_oe_hu += d.B.oe_hu;
+      daysCount++;
     });
 
-    // 6. FINÁLNÍ TVORBA CHART DAT A "TUG OF WAR"
     const finalChartData = Array.from(groupedMap.values())
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .map(g => ({
-        label: g.label,
-        a_tos: g.a_to_set.size,
-        b_tos: g.b_to_set.size,
-        a_hus: g.a_hu_set.size,
-        b_hus: g.b_hu_set.size,
-        cumulativeGap: 0 
-      }));
-
+      .sort((a, b) => a.key.localeCompare(b.key));
+      
     let cumulativeGap = 0;
+    let aWins = 0, bWins = 0, draws = 0;
+
     finalChartData.forEach(g => {
-      // Náskok počítáme primárně přes Picking TO
       cumulativeGap += (g.a_tos - g.b_tos);
       g.cumulativeGap = cumulativeGap;
       
       if (g.a_tos > g.b_tos) aWins++;
       else if (g.b_tos > g.a_tos) bWins++;
-      else if (g.a_tos > 0 || g.b_tos > 0) draws++; // Remíza jen když se reálně pracovalo
+      else if (g.a_tos > 0 || g.b_tos > 0) draws++;
     });
 
     const totalMatches = aWins + bWins + draws;
@@ -174,32 +158,30 @@ export default function ShiftBenchmarkingPage() {
       chartData: finalChartData,
       stats: { 
         aWins, bWins, draws, aWinRate, bWinRate, totalMatches,
-        aTotalTo: oStats.a_tos.size, bTotalTo: oStats.b_tos.size,
-        aTotalHu: oStats.a_hus.size, bTotalHu: oStats.b_hus.size,
-        aKs: oStats.a_ks, bKs: oStats.b_ks,
-        aPckKs: oStats.a_pck_ks, bPckKs: oStats.b_pck_ks,
-        aWeight: oStats.a_weight, bWeight: oStats.b_weight,
-        aOperators: oStats.a_operators.size, bOperators: oStats.b_operators.size
+        aTotalTo, bTotalTo, aTotalHu, bTotalHu,
+        aKs, bKs, aPckKs, bPckKs, aWeight, bWeight,
+        aOperators: daysCount ? Math.round(aOps / daysCount) : 0, 
+        bOperators: daysCount ? Math.round(bOps / daysCount) : 0
       },
       orderTypeStats: {
-        a_normal_to: oStats.a_normal_tos.size, a_express_to: oStats.a_express_tos.size, a_oe_to: oStats.a_oe_tos.size,
-        b_normal_to: oStats.b_normal_tos.size, b_express_to: oStats.b_express_tos.size, b_oe_to: oStats.b_oe_tos.size,
-        a_normal_hu: oStats.a_normal_hus.size, a_express_hu: oStats.a_express_hus.size, a_oe_hu: oStats.a_oe_hus.size,
-        b_normal_hu: oStats.b_normal_hus.size, b_express_hu: oStats.b_express_hus.size, b_oe_hu: oStats.b_oe_hus.size,
+        a_normal_to, a_express_to, a_oe_to,
+        b_normal_to, b_express_to, b_oe_to,
+        a_normal_hu, a_express_hu, a_oe_hu,
+        b_normal_hu, b_express_hu, b_oe_hu,
       }
     };
-  }, [pickingData, packingData, timeRange, grouping]);
+  }, [data, grouping]);
 
   const orderTypeComparisonTO = [
-    { name: 'Normal (TO)', A: orderTypeStats.a_normal_to, B: orderTypeStats.b_normal_to },
-    { name: 'Express (TO)', A: orderTypeStats.a_express_to, B: orderTypeStats.b_express_to },
-    { name: 'OE (TO)', A: orderTypeStats.a_oe_to, B: orderTypeStats.b_oe_to },
+    { name: 'Normal', A: orderTypeStats.a_normal_to, B: orderTypeStats.b_normal_to },
+    { name: 'Express', A: orderTypeStats.a_express_to, B: orderTypeStats.b_express_to },
+    { name: 'OE', A: orderTypeStats.a_oe_to, B: orderTypeStats.b_oe_to },
   ];
 
   const orderTypeComparisonHU = [
-    { name: 'Normal (HU)', A: orderTypeStats.a_normal_hu, B: orderTypeStats.b_normal_hu },
-    { name: 'Express (HU)', A: orderTypeStats.a_express_hu, B: orderTypeStats.b_express_hu },
-    { name: 'OE (HU)', A: orderTypeStats.a_oe_hu, B: orderTypeStats.b_oe_hu },
+    { name: 'Normal', A: orderTypeStats.a_normal_hu, B: orderTypeStats.b_normal_hu },
+    { name: 'Express', A: orderTypeStats.a_express_hu, B: orderTypeStats.b_express_hu },
+    { name: 'OE', A: orderTypeStats.a_oe_hu, B: orderTypeStats.b_oe_hu },
   ];
 
   const rows = [
@@ -214,7 +196,7 @@ export default function ShiftBenchmarkingPage() {
     { label: '  ↳ z toho OE (HU)', a: orderTypeStats.a_oe_hu, b: orderTypeStats.b_oe_hu, fmt: true, sub: true },
     { label: 'Packing (Ks) - Celkem', a: stats.aPckKs, b: stats.bPckKs, fmt: true },
     { label: 'Váha (kg)', a: stats.aWeight, b: stats.bWeight, fmt: true },
-    { label: 'Operátoři (Unikátní)', a: stats.aOperators, b: stats.bOperators },
+    { label: 'Ø Operátorů na směnu', a: stats.aOperators, b: stats.bOperators },
   ];
 
   if (loading) {
@@ -225,12 +207,27 @@ export default function ShiftBenchmarkingPage() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="glass-panel p-8 text-center space-y-4">
+        <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
+        <h2 className="text-xl font-bold text-white">Chyba při načítání dat</h2>
+        <p className="text-white/60">{error}</p>
+        <button onClick={() => loadData(timeRange)} className="glass-button-primary mt-4">Zkusit znovu</button>
+      </div>
+    );
+  }
+
   if (chartData.length === 0) {
     return (
       <div className="glass-panel p-8 text-center space-y-4">
         <Swords className="w-12 h-12 text-white/20 mx-auto" />
         <h2 className="text-xl font-bold text-white">Nedostatek dat pro Benchmarking</h2>
         <p className="text-white/60">Zvolte jiné časové období, nebo importujte více dat do historie.</p>
+        <div className="flex justify-center gap-2 mt-4">
+          <button onClick={() => setTimeRange('ytd')} className="bg-white/10 px-4 py-2 rounded-lg text-sm">Zkusit Letošní rok</button>
+          <button onClick={() => setTimeRange('all')} className="bg-white/10 px-4 py-2 rounded-lg text-sm">Zkusit Všechna data</button>
+        </div>
       </div>
     );
   }
@@ -240,7 +237,6 @@ export default function ShiftBenchmarkingPage() {
   return (
     <div className="space-y-6 animate-fade-in-up pb-10">
       
-      {/* HEADER & OVLÁDÁNÍ */}
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
@@ -272,10 +268,7 @@ export default function ShiftBenchmarkingPage() {
         </div>
       </div>
 
-      {/* SOUHRNNÉ METRIKY & WIN RATE */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        
-        {/* Směna A */}
         <div className={`glass-panel p-6 relative overflow-hidden group border-t-4 ${overallWinner === 'A' ? 'border-t-emerald-400' : 'border-t-emerald-500/20'}`}>
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-emerald-400">
             <span className="text-9xl font-black">A</span>
@@ -297,7 +290,6 @@ export default function ShiftBenchmarkingPage() {
           </div>
         </div>
 
-        {/* Přetahovaná */}
         <div className="glass-panel p-6 flex flex-col justify-center items-center text-center">
           <Swords className="w-10 h-10 text-white/20 mb-3" />
           <h3 className="text-sm font-bold text-white/60 uppercase tracking-wider mb-4">Přímá konfrontace</h3>
@@ -315,7 +307,6 @@ export default function ShiftBenchmarkingPage() {
           {stats.draws > 0 && <div className="text-xs text-white/30 mt-3">{stats.draws} remíz</div>}
         </div>
 
-        {/* Směna B */}
         <div className={`glass-panel p-6 relative overflow-hidden group border-t-4 ${overallWinner === 'B' ? 'border-t-amber-400' : 'border-t-amber-500/20'}`}>
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-amber-400">
             <span className="text-9xl font-black">B</span>
@@ -336,16 +327,12 @@ export default function ShiftBenchmarkingPage() {
             </div>
           </div>
         </div>
-
       </div>
 
-      {/* HLAVNÍ GRAFY */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* PICKING BAR CHART */}
         <div className="glass-panel p-6">
           <h3 className="text-lg font-bold text-white mb-1">Vývoj Picking TO</h3>
-          <p className="text-xs text-white/40 mb-5">Porovnání vychystaných Transfer Orderů.</p>
+          <p className="text-xs text-white/40 mb-5">Srovnání objemů TO v jednotlivých úsecích.</p>
           <div className="w-full h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -354,7 +341,6 @@ export default function ShiftBenchmarkingPage() {
                 <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{color: '#fff'}} cursor={{fill: '#ffffff05'}} />
                 <Legend wrapperStyle={{ paddingTop: '12px', fontSize: '11px' }} />
-                
                 <Bar dataKey="a_tos" name="Směna A (TO)" fill="#10b981" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="b_tos" name="Směna B (TO)" fill="#fbbf24" radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -362,7 +348,6 @@ export default function ShiftBenchmarkingPage() {
           </div>
         </div>
 
-        {/* PACKING BAR CHART */}
         <div className="glass-panel p-6">
           <h3 className="text-lg font-bold text-white mb-1">Vývoj Packing HU</h3>
           <p className="text-xs text-white/40 mb-5">Porovnání zabalených Handling Unitů.</p>
@@ -374,7 +359,6 @@ export default function ShiftBenchmarkingPage() {
                 <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{color: '#fff'}} cursor={{fill: '#ffffff05'}} />
                 <Legend wrapperStyle={{ paddingTop: '12px', fontSize: '11px' }} />
-                
                 <Bar dataKey="a_hus" name="Směna A (HU)" fill="#10b981" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="b_hus" name="Směna B (HU)" fill="#fbbf24" radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -382,12 +366,9 @@ export default function ShiftBenchmarkingPage() {
           </div>
         </div>
 
-        {/* KUMULATIVNÍ GAP (PŘETAHOVANÁ) */}
         <div className="glass-panel p-6 lg:col-span-2">
           <h3 className="text-lg font-bold text-white mb-1">Kumulativní Náskok Pickingu (Tug-of-War)</h3>
-          <p className="text-xs text-white/40 mb-5">
-            Čára ukazuje celkový rozdíl TO. Kladné hodnoty = vede A, záporné = vede B.
-          </p>
+          <p className="text-xs text-white/40 mb-5">Čára ukazuje celkový rozdíl TO. Kladné hodnoty = vede A, záporné = vede B.</p>
           <div className="w-full h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -396,7 +377,6 @@ export default function ShiftBenchmarkingPage() {
                 <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} />
                 <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" />
-                
                 <Bar dataKey="cumulativeGap" name="Náskok Směny A (v TO)">
                   {chartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.cumulativeGap >= 0 ? '#10b981' : '#fbbf24'} />
@@ -408,7 +388,6 @@ export default function ShiftBenchmarkingPage() {
           </div>
         </div>
 
-        {/* POROVNÁNÍ TYPŮ ZAKÁZEK (NOVE) */}
         <div className="glass-panel p-6">
           <h3 className="text-lg font-bold text-white mb-1">Priority Zakázek: Picking (TO)</h3>
           <p className="text-xs text-white/40 mb-5">Která směna odbavila více Normal / Express / OE.</p>
@@ -444,7 +423,6 @@ export default function ShiftBenchmarkingPage() {
             </ResponsiveContainer>
           </div>
         </div>
-
       </div>
 
       <div className="glass-panel overflow-hidden">
