@@ -280,7 +280,7 @@ export default function PackingPage() {
                 <Tooltip 
                   cursor={{fill: 'rgba(255,255,255,0.05)'}} 
                   contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} 
-                  formatter={(value: any, name: string) => [value, name === 'HUs' ? 'Handling Unity (HU)' : 'Kusy (Ks)']}
+                  formatter={(value: any, name: any) => [value, name === 'HUs' ? 'Handling Unity (HU)' : 'Kusy (Ks)']}
                 />
                 <Bar dataKey="HUs" fill="#a855f7" radius={[0,4,4,0]} barSize={16}>
                   <LabelList dataKey="HUs" position="right" fill="#ffffff" fontSize={11} fontWeight="bold" />
