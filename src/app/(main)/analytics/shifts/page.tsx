@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  LineChart, Line, AreaChart, Area, ReferenceLine, Cell
+  LineChart, Line, AreaChart, Area, ReferenceLine, Cell, ComposedChart 
 } from "recharts";
 import { Loader2, AlertCircle, Trophy, Swords, CalendarDays, TrendingUp, Layers } from "lucide-react";
 import { getISOWeekNumber, getShiftConfig } from "@/lib/data-context";
