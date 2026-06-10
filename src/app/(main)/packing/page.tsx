@@ -1,238 +1,290 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Box, Users, Filter } from "lucide-react";
+import { Box, Users, Layers, Activity, AlertOctagon, Zap } from "lucide-react";
 import {
-  ComposedChart, BarChart, Bar, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ComposedChart, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList
 } from "recharts";
-import { useData, hourlySlots, getSlot } from "@/lib/data-context";
+import { useData, getShiftLabel } from "@/lib/data-context";
 import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-period-data";
 import PeriodSelector from "@/components/ui/PeriodSelector";
 import EmployeePerformance from "@/components/analytics/EmployeePerformance";
 
-const OPERATOR_COLORS = [
-  "#a855f7","#ec4899","#f59e0b","#22c55e","#3b82f6",
-  "#14b8a6","#ef4444","#f97316","#06b6d4","#8b5cf6",
-  "#10b981","#e11d48","#0ea5e9","#d946ef","#84cc16",
-];
+const PRIORITIES_COLORS = { Normal: "#10b981", Express: "#f59e0b", OE: "#ef4444" };
+const SHIFT_COLORS = { A: "#10b981", B: "#fbbf24" };
 
 export default function PackingPage() {
   const todayStr = new Date().toISOString().split('T')[0];
   const [period, setPeriod] = useState<Period>("day");
   const [dateValue, setDateValue] = useState<string>(todayStr);
-  const [isComparing, setIsComparing] = useState<boolean>(false);
-  const [compareDateValue, setCompareDateValue] = useState<string>("");
-  const [selectedOperators, setSelectedOperators] = useState<Set<string>>(new Set());
 
   const { pickingData: localPicking, packingData: localPacking, likpData } = useData();
-  const { pickingData, packingData, compPacking, loading } = usePeriodData(
-    period, localPicking, localPacking, dateValue, isComparing, compareDateValue, likpData
+  const { pickingData, packingData, previousPackingData, loading } = usePeriodData(
+    period, localPicking, localPacking, dateValue, false, "", likpData
   );
 
   const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
 
+  // Aktuální KPI
   const totalKs = packingData.reduce((s, r) => s + (r.quantity || 0), 0);
   const totalHUs = new Set(packingData.map(r => r.internal_hu)).size;
-  const uniqueOperators = new Set(packingData.filter(r => r.operator && r.hu_number).map(r => r.operator!)).size;
+  const uniqueOperators = new Set(packingData.filter(r => r.operator).map(r => r.operator)).size;
 
-  const compTotalKs = compPacking.reduce((s, r) => s + (r.quantity || 0), 0);
-  const compTotalHUs = new Set(compPacking.map(r => r.internal_hu)).size;
+  // Předchozí KPI (pro výpočet trendu)
+  const prevTotalKs = previousPackingData.reduce((s, r) => s + (r.quantity || 0), 0);
+  const prevTotalHUs = new Set(previousPackingData.map(r => r.internal_hu)).size;
 
-  const getDiffLabel = (current: number, compare: number) => {
-    if (!isComparing || compare === 0) return null;
-    const diff = ((current - compare) / compare) * 100;
+  const renderTrendBadge = (current: number, previous: number) => {
+    if (!previous || period === 'all') return null;
+    const diff = ((current - previous) / previous) * 100;
     const isPos = diff >= 0;
     return (
-      <span className={`text-xs ml-2 font-bold px-1.5 py-0.5 rounded-full ${isPos ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-        {isPos ? '+' : ''}{diff.toFixed(1)}%
+      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ml-2 ${isPos ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+        {isPos ? '+' : ''}{diff.toFixed(1)}% vs minule
       </span>
     );
   };
 
-  const { operatorChartData, operators } = useMemo(() => {
-    const timeKeys: string[] = period === "day"
-      ? hourlySlots.map(s => s.start)
-      : [...new Set(chartData.map(d => d.time))];
+  // Rozpad priorit
+  const priorityStats = useMemo(() => {
+    let nHu = 0, eHu = 0, oHu = 0;
+    const seenHUs = new Set<string>();
 
-    const map = new Map<string, any>();
-    timeKeys.forEach(t => map.set(t, { time: t }));
-
-    const opHUs = new Map<string, Map<string, Set<string>>>();
     packingData.forEach(p => {
-      if (!p.created_at || !p.operator) return;
-      let timeKey: string = "";
-      if (period === "day") {
-        const slotObj = hourlySlots.find(s => `${s.start} - ${s.end}` === getSlot(p.created_at));
-        timeKey = slotObj ? slotObj.start : "";
-      } else if (period === "week") {
-        let d = new Date(p.created_at).getDay(); d = d === 0 ? 7 : d;
-        timeKey = ['Po','Út','St','Čt','Pá','So','Ne'][d - 1];
-      } else if (period === "month") {
-        timeKey = String(new Date(p.created_at).getDate());
-      } else {
-        timeKey = new Date(p.created_at).toISOString().substring(5, 7);
+      const key = p.internal_hu;
+      if (!seenHUs.has(key)) {
+        seenHUs.add(key);
+        const cat = p.category || 'Normal';
+        if (cat === 'Express') eHu++;
+        else if (cat === 'OE') oHu++;
+        else nHu++;
       }
-      if (!timeKey || !map.has(timeKey)) return;
-      if (!opHUs.has(timeKey)) opHUs.set(timeKey, new Map());
-      const slotMap = opHUs.get(timeKey)!;
-      if (!slotMap.has(p.operator)) slotMap.set(p.operator, new Set());
-      slotMap.get(p.operator)!.add(p.internal_hu);
     });
 
-    const ops = new Set<string>();
-    opHUs.forEach((slotMap, timeKey) => {
-      const entry = map.get(timeKey);
-      if (!entry) return;
-      slotMap.forEach((huSet, op) => {
-        ops.add(op);
-        entry[op] = huSet.size;
-      });
+    const total = nHu + eHu + oHu;
+    return [
+      { name: 'Normal', value: nHu, pct: total > 0 ? (nHu/total)*100 : 0, color: PRIORITIES_COLORS.Normal },
+      { name: 'Express', value: eHu, pct: total > 0 ? (eHu/total)*100 : 0, color: PRIORITIES_COLORS.Express },
+      { name: 'OE', value: oHu, pct: total > 0 ? (oHu/total)*100 : 0, color: PRIORITIES_COLORS.OE },
+    ].filter(x => x.value > 0);
+  }, [packingData]);
+
+  // Rozpad směn
+  const shiftStats = useMemo(() => {
+    let aHu = 0, bHu = 0;
+    const seenHUs = new Set<string>();
+
+    packingData.forEach(p => {
+      if (!p.created_at) return;
+      const key = p.internal_hu;
+      if (!seenHUs.has(key)) {
+        seenHUs.add(key);
+        const shift = getShiftLabel(new Date(p.created_at));
+        if (shift === 'A') aHu++;
+        else if (shift === 'B') bHu++;
+      }
     });
 
-    return { operatorChartData: Array.from(map.values()), operators: Array.from(ops) };
-  }, [packingData, period, chartData]);
+    const total = aHu + bHu;
+    return [
+      { name: 'Směna A', value: aHu, pct: total > 0 ? (aHu/total)*100 : 0, color: SHIFT_COLORS.A },
+      { name: 'Směna B', value: bHu, pct: total > 0 ? (bHu/total)*100 : 0, color: SHIFT_COLORS.B },
+    ].filter(x => x.value > 0);
+  }, [packingData]);
 
-  const toggleOp = (op: string) => setSelectedOperators(prev => {
-    const next = new Set(prev);
-    next.has(op) ? next.delete(op) : next.add(op);
-    return next;
-  });
-  const visibleOps = selectedOperators.size > 0 ? operators.filter(o => selectedOperators.has(o)) : operators;
+  // Leaderboard operátorů
+  const operatorLeaderboard = useMemo(() => {
+    const map = new Map<string, { name: string, hus: Set<string>, ks: number }>();
+    packingData.forEach(p => {
+      if (!p.operator) return;
+      if (!map.has(p.operator)) map.set(p.operator, { name: p.operator, hus: new Set(), ks: 0 });
+      const entry = map.get(p.operator)!;
+      entry.hus.add(p.internal_hu);
+      entry.ks += (p.quantity || 0);
+    });
+    return Array.from(map.values())
+      .map(x => ({ name: x.name, HUs: x.hus.size, Ks: x.ks }))
+      .sort((a, b) => b.HUs - a.HUs)
+      .slice(0, 15); // Top 15
+  }, [packingData]);
 
   const xKey = period === "day" ? "fullTime" : "time";
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
+    <div className="space-y-6 animate-fade-in-up pb-10">
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-wide">Detailní Přehled – Packing</h1>
+          <h1 className="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
+            <Box className="w-7 h-7 text-purple-400" /> Detailní Přehled – Packing
+          </h1>
           <p className="text-white/40 text-sm mt-1">Sledování výkonnosti balení a kompletace</p>
         </div>
         <PeriodSelector 
           period={period} 
-          onChangePeriod={(p) => { setPeriod(p); setSelectedOperators(new Set()); }} 
+          onChangePeriod={setPeriod} 
           dateValue={dateValue}
           onChangeDate={setDateValue}
-          isComparing={isComparing}
-          onToggleCompare={setIsComparing}
-          compareDateValue={compareDateValue}
-          onChangeCompareDate={setCompareDateValue}
           loading={loading}
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="glass-panel p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-10"><Box className="w-20 h-20 text-purple-400" /></div>
-          <div className="relative z-10">
-            <div className="text-3xl font-black text-white flex items-center">
-              {totalHUs.toLocaleString()} {getDiffLabel(totalHUs, compTotalHUs)}
-            </div>
-            <div className="text-sm font-bold text-purple-400 mt-1">
-              {totalKs.toLocaleString()} Ks {getDiffLabel(totalKs, compTotalKs)}
-            </div>
-            <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Zabalené HU</div>
-          </div>
-        </div>
-        <div className="glass-panel p-6">
+      {/* KPI KARTY */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="glass-panel p-6 border-l-4 border-l-purple-500/80 hover:bg-white/[0.03] transition-colors">
+          <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Zabaleno (HU)</p>
           <div className="text-3xl font-black text-white flex items-center">
-            {totalHUs > 0 ? Math.round(totalKs / totalHUs) : 0}
-            {getDiffLabel(totalHUs > 0 ? (totalKs / totalHUs) : 0, compTotalHUs > 0 ? (compTotalKs / compTotalHUs) : 0)}
+            {totalHUs.toLocaleString()} {renderTrendBadge(totalHUs, prevTotalHUs)}
           </div>
-          <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Průměr Ks / HU</div>
+          <p className="text-sm font-medium text-white/40 mt-1">Handling Units</p>
         </div>
-        <div className="glass-panel p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-10"><Users className="w-20 h-20 text-amber-400" /></div>
-          <div className="relative z-10">
-            <div className="text-3xl font-black text-white">{uniqueOperators}</div>
-            <div className="text-xs font-semibold text-white/50 tracking-wider uppercase mt-3">Aktivní Packeři</div>
+
+        <div className="glass-panel p-6 border-l-4 border-l-purple-400/50 hover:bg-white/[0.03] transition-colors">
+          <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Objem (Ks)</p>
+          <div className="text-3xl font-black text-white flex items-center">
+            {totalKs.toLocaleString()} {renderTrendBadge(totalKs, prevTotalKs)}
+          </div>
+          <p className="text-sm font-medium text-white/40 mt-1">Fyzické kusy</p>
+        </div>
+
+        <div className="glass-panel p-6 border-l-4 border-l-emerald-500/80 hover:bg-white/[0.03] transition-colors">
+          <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Hustota (Ks/HU)</p>
+          <div className="text-3xl font-black text-white flex items-center">
+            {totalHUs > 0 ? (totalKs / totalHUs).toFixed(1) : "0"}
+            {renderTrendBadge(totalHUs > 0 ? (totalKs / totalHUs) : 0, prevTotalHUs > 0 ? (prevTotalKs / prevTotalHUs) : 0)}
+          </div>
+          <p className="text-sm font-medium text-white/40 mt-1">Průměr Ks na jednu HU</p>
+        </div>
+
+        <div className="glass-panel p-6 border-l-4 border-l-amber-500/80 hover:bg-white/[0.03] transition-colors">
+          <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
+          <div className="text-3xl font-black text-white flex items-center">
+            {uniqueOperators}
+          </div>
+          <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů (Ø {uniqueOperators > 0 ? Math.round(totalHUs / uniqueOperators) : 0} HU/os)</p>
+        </div>
+      </div>
+
+      {/* DONUT GRAFY (MIX) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
+          <div className="flex-1 w-full text-center sm:text-left">
+            <h3 className="text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2 mb-2">
+              <AlertOctagon className="w-5 h-5 text-rose-400" /> Mix Priorit
+            </h3>
+            <p className="text-xs text-white/40 mb-4">Podíl urgentních zakázek (Normal vs Express vs OE).</p>
+            <div className="space-y-2">
+              {priorityStats.map(s => (
+                <div key={s.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
+                    <span className="text-sm text-white/80">{s.name}</span>
+                  </div>
+                  <div className="text-sm font-bold text-white">{s.pct.toFixed(1)}% <span className="text-xs text-white/40 font-normal ml-1">({s.value})</span></div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="w-40 h-40 shrink-0 relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={priorityStats} innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value" stroke="none">
+                  {priorityStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                </Pie>
+                <Tooltip formatter={(value: any, name: any) => [`${value} HU`, name]} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <span className="text-xl font-black text-white">{totalHUs}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
+          <div className="flex-1 w-full text-center sm:text-left">
+            <h3 className="text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2 mb-2">
+              <Zap className="w-5 h-5 text-amber-400" /> Podíl Směn
+            </h3>
+            <p className="text-xs text-white/40 mb-4">Která směna (A vs B) zabalila v tomto období více HU.</p>
+            <div className="space-y-2">
+              {shiftStats.map(s => (
+                <div key={s.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
+                    <span className="text-sm text-white/80">{s.name}</span>
+                  </div>
+                  <div className="text-sm font-bold text-white">{s.pct.toFixed(1)}% <span className="text-xs text-white/40 font-normal ml-1">({s.value})</span></div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="w-40 h-40 shrink-0 relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={shiftStats} innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value" stroke="none">
+                  {shiftStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                </Pie>
+                <Tooltip formatter={(value: any, name: any) => [`${value} HU`, name]} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">Vývoj počtu HU a Kusů</h3>
-          <div className="h-[280px] w-full">
-            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
-                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  <Bar yAxisId="left" dataKey="packing" name="Kusy (Ks)" fill="#b18cff" fillOpacity={0.7} radius={[4,4,0,0]} />
-                  <Line yAxisId="right" type="monotone" dataKey="packingHUs" name="Handling Unity (HU)" stroke="#e4b4ff" strokeWidth={3} dot={{ r: 4, fill: "#e4b4ff", strokeWidth: 0 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* OPRAVA: Skrytí AreaChart, nahrazeno zpět čistým BarChart */}
-        <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-5">Struktura zakázek podle typu (HU)</h3>
-          <div className="h-[280px] w-full">
-            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
-                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  <Bar dataKey="packingNormal" name="Normální (HU)" stackId="cat" fill="#10b981" />
-                  <Bar dataKey="packingExpress" name="Express (HU)" stackId="cat" fill="#f59e0b" />
-                  <Bar dataKey="packingOE" name="OE (HU)" stackId="cat" fill="#ef4444" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-      </div>
-
+      {/* HLAVNÍ GRAF TRENDU */}
       <div className="glass-panel p-6">
-        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <Users className="w-5 h-5 text-purple-400" />
-            <h3 className="text-lg font-bold text-white">Produktivita Operátorů – HU</h3>
-          </div>
-          {operators.length > 0 && (
-            <button onClick={() => setSelectedOperators(new Set())} className="text-xs text-white/40 hover:text-white transition-colors flex items-center gap-1">
-              <Filter className="w-3 h-3" /> {selectedOperators.size > 0 ? `Filtr: ${selectedOperators.size}/${operators.length}` : "Všichni"}
-            </button>
+        <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+          <Activity className="w-5 h-5 text-purple-400" /> Vývoj Packingu v čase
+        </h3>
+        <p className="text-xs text-white/40 mb-6">Porovnání trendu Handling Units s fyzickým objemem (Ks).</p>
+        <div className="h-[320px] w-full">
+          {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorKsPack" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#a855f7" stopOpacity={0.5}/>
+                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0.0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                
+                <Area yAxisId="left" type="monotone" dataKey="packing" name="Objem (Ks)" fill="url(#colorKsPack)" stroke="#a855f7" strokeWidth={2} />
+                <Bar yAxisId="right" dataKey="packingHUs" name="Handling Unity (HU)" fill="#e4b4ff" radius={[2,2,0,0]} barSize={20} />
+              </ComposedChart>
+            </ResponsiveContainer>
           )}
         </div>
-        {operators.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {operators.map((op, i) => (
-              <button key={op} onClick={() => toggleOp(op)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${selectedOperators.size === 0 || selectedOperators.has(op) ? 'text-white bg-white/10' : 'text-white/25 bg-transparent border-white/5'}`}
-                style={{ borderColor: selectedOperators.has(op) ? OPERATOR_COLORS[i % OPERATOR_COLORS.length] : undefined }}
-              >
-                <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: OPERATOR_COLORS[i % OPERATOR_COLORS.length] }} />{op}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="h-[380px] w-full">
+      </div>
+
+      {/* LEADERBOARD OPERÁTORŮ */}
+      <div className="glass-panel p-6">
+        <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+          <Users className="w-5 h-5 text-purple-400" /> Produktivita Packerů (Top 15)
+        </h3>
+        <p className="text-xs text-white/40 mb-6">Žebříček operátorů podle celkového počtu zabalených HU za vybrané období.</p>
+        <div className="h-[400px] w-full">
           {loading ? (
             <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={operatorChartData} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
-                <Legend wrapperStyle={{ paddingTop: '16px', fontSize: '11px' }} />
-                {visibleOps.map((op) => {
-                  const idx = operators.indexOf(op);
-                  return <Bar key={op} dataKey={op} name={op} fill={OPERATOR_COLORS[idx % OPERATOR_COLORS.length]} radius={[3,3,0,0]} />;
-                })}
+              <BarChart layout="vertical" data={operatorLeaderboard} margin={{ top: 0, right: 40, left: 10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={true} vertical={false} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" width={100} stroke="#ffffff80" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip 
+                  cursor={{fill: 'rgba(255,255,255,0.05)'}} 
+                  contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} 
+                  formatter={(value: any, name: string) => [value, name === 'HUs' ? 'Handling Unity (HU)' : 'Kusy (Ks)']}
+                />
+                <Bar dataKey="HUs" fill="#a855f7" radius={[0,4,4,0]} barSize={16}>
+                  <LabelList dataKey="HUs" position="right" fill="#ffffff" fontSize={11} fontWeight="bold" />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
