@@ -336,9 +336,10 @@ export default function ShiftBenchmarkingPage() {
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} />
                 <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" />
                 
-                <Bar dataKey="cumulativeGap" name="Náskok Směny A (v TO)">
+                {/* OPRAVA: Přesun radiusu na Bar */}
+                <Bar dataKey="cumulativeGap" name="Náskok Směny A (v TO)" radius={[3,3,3,3]}>
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.cumulativeGap >= 0 ? '#10b981' : '#fbbf24'} radius={[3,3,3,3]} />
+                    <Cell key={`cell-${index}`} fill={entry.cumulativeGap >= 0 ? '#10b981' : '#fbbf24'} />
                   ))}
                 </Bar>
                 <Line type="step" dataKey="cumulativeGap" stroke="rgba(255,255,255,0.3)" strokeWidth={2} dot={false} legendType="none" />
