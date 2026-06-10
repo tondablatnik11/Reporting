@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PackageSearch, Users, Layers, Activity, AlertOctagon, Zap } from "lucide-react";
+import { PackageSearch, Users, Activity, AlertOctagon, Zap } from "lucide-react";
 import {
   ComposedChart, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList
@@ -106,7 +106,7 @@ export default function PickingPage() {
     return Array.from(map.values())
       .map(x => ({ name: x.name, TOs: x.tos.size, Ks: x.ks }))
       .sort((a, b) => b.TOs - a.TOs)
-      .slice(0, 15); // Top 15
+      .slice(0, 15); 
   }, [pickingData]);
 
   const xKey = period === "day" ? "fullTime" : "time";
@@ -231,34 +231,61 @@ export default function PickingPage() {
         </div>
       </div>
 
-      {/* HLAVNÍ GRAF TRENDU */}
-      <div className="glass-panel p-6">
-        <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-          <Activity className="w-5 h-5 text-blue-400" /> Vývoj Pickingu v čase
-        </h3>
-        <p className="text-xs text-white/40 mb-6">Porovnání trendu Transfer Orderů s fyzickým objemem (Ks).</p>
-        <div className="h-[320px] w-full">
-          {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorKs" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.5}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
-                <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                
-                <Area yAxisId="left" type="monotone" dataKey="picking" name="Objem (Ks)" fill="url(#colorKs)" stroke="#3b82f6" strokeWidth={2} />
-                <Bar yAxisId="right" dataKey="pickingTOs" name="Transfer Ordery (TO)" fill="#60d4ff" radius={[2,2,0,0]} barSize={20} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
+      {/* DVOJGRAF TRENDŮ (ÚPRAVA: Grafy vedle sebe) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Celkový objem */}
+        <div className="glass-panel p-6">
+          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-blue-400" /> Vývoj Pickingu (Kusy vs TO)
+          </h3>
+          <p className="text-xs text-white/40 mb-6">Porovnání trendu Transfer Orderů s fyzickým objemem (Ks).</p>
+          <div className="h-[280px] w-full">
+            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorKs" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.5}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                  
+                  <Area yAxisId="left" type="monotone" dataKey="picking" name="Objem (Ks)" fill="url(#colorKs)" stroke="#3b82f6" strokeWidth={2} />
+                  <Bar yAxisId="right" dataKey="pickingTOs" name="Transfer Ordery (TO)" fill="#60d4ff" radius={[2,2,0,0]} barSize={20} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* NOVÉ: Hodinový/Časový rozpad priorit */}
+        <div className="glass-panel p-6">
+          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+            <AlertOctagon className="w-5 h-5 text-blue-400" /> Rozpad zakázek podle typu (TO)
+          </h3>
+          <p className="text-xs text-white/40 mb-6">Struktura typů zakázek (Normal / Express / OE) v průběhu času.</p>
+          <div className="h-[280px] w-full">
+            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                  <Bar dataKey="pickingNormal" name="Normální" stackId="cat" fill="#10b981" />
+                  <Bar dataKey="pickingExpress" name="Express" stackId="cat" fill="#f59e0b" />
+                  <Bar dataKey="pickingOE" name="OE" stackId="cat" fill="#ef4444" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
       </div>
 
