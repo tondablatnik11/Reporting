@@ -280,7 +280,7 @@ export default function PickingPage() {
                 <Tooltip 
                   cursor={{fill: 'rgba(255,255,255,0.05)'}} 
                   contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} 
-                  formatter={(value: any, name: string) => [value, name === 'TOs' ? 'Transfer Ordery (TO)' : 'Kusy (Ks)']}
+                  formatter={(value: any, name: any) => [value, name === 'TOs' ? 'Transfer Ordery (TO)' : 'Kusy (Ks)']}
                 />
                 <Bar dataKey="TOs" fill="#3b82f6" radius={[0,4,4,0]} barSize={16}>
                   <LabelList dataKey="TOs" position="right" fill="#ffffff" fontSize={11} fontWeight="bold" />
