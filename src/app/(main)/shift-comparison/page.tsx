@@ -105,10 +105,10 @@ export default function ShiftBenchmarkingPage() {
     let aKs = 0, bKs = 0, aPckKs = 0, bPckKs = 0, aWeight = 0, bWeight = 0;
     let aOps = 0, bOps = 0, daysCount = 0;
 
-    let a_norm_to = 0, a_exp_to = 0, a_oe_to = 0;
-    let b_norm_to = 0, b_exp_to = 0, b_oe_to = 0;
-    let a_norm_hu = 0, a_exp_hu = 0, a_oe_hu = 0;
-    let b_norm_hu = 0, b_exp_hu = 0, b_oe_hu = 0;
+    let a_normal_to = 0, a_express_to = 0, a_oe_to = 0;
+    let b_normal_to = 0, b_express_to = 0, b_oe_to = 0;
+    let a_normal_hu = 0, a_express_hu = 0, a_oe_hu = 0;
+    let b_normal_hu = 0, b_express_hu = 0, b_oe_hu = 0;
 
     Array.from(dailyMap.values()).forEach(d => {
       const dateObj = new Date(d.date);
@@ -139,10 +139,10 @@ export default function ShiftBenchmarkingPage() {
       aWeight += d.A.wt; bWeight += d.B.wt;
       aOps += d.A.ops; bOps += d.B.ops;
       
-      a_norm_to += d.A.norm_to; a_exp_to += d.A.exp_to; a_oe_to += d.A.oe_to;
-      b_norm_to += d.B.norm_to; b_exp_to += d.B.exp_to; b_oe_to += d.B.oe_to;
-      a_norm_hu += d.A.norm_hu; a_exp_hu += d.A.exp_hu; a_oe_hu += d.A.oe_hu;
-      b_norm_hu += d.B.norm_hu; b_exp_hu += d.B.exp_hu; b_oe_hu += d.B.oe_hu;
+      a_normal_to += d.A.norm_to; a_express_to += d.A.exp_to; a_oe_to += d.A.oe_to;
+      b_normal_to += d.B.norm_to; b_express_to += d.B.exp_to; b_oe_to += d.B.oe_to;
+      a_normal_hu += d.A.norm_hu; a_express_hu += d.A.exp_hu; a_oe_hu += d.A.oe_hu;
+      b_normal_hu += d.B.norm_hu; b_express_hu += d.B.exp_hu; b_oe_hu += d.B.oe_hu;
       daysCount++;
     });
 
@@ -391,7 +391,7 @@ export default function ShiftBenchmarkingPage() {
                 <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" />
                 <Bar dataKey="cumulativeGap" name="Náskok Směny A (v TO)">
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.cumulativeGap >= 0 ? '#10b981' : '#fbbf24'} radius={[3,3,0,0]} />
+                    <Cell key={`cell-${index}`} fill={entry.cumulativeGap >= 0 ? '#10b981' : '#fbbf24'} />
                   ))}
                 </Bar>
                 <Line type="step" dataKey="cumulativeGap" stroke="rgba(255,255,255,0.3)" strokeWidth={2} dot={false} legendType="none" />
