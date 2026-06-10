@@ -141,6 +141,10 @@ export interface Database {
         Args: Record<string, any>
         Returns: any
       }
+      get_shift_benchmarking_data: {
+        Args: Record<string, any>
+        Returns: any
+      }
     }
     Views: {
       [_ in never]: never
