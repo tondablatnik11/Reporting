@@ -10,7 +10,8 @@ import {
   getShiftLabel,
 } from "@/lib/data-context";
 
-export type Period = "day" | "week" | "month" | "all";
+// PŘIDÁNY NOVÉ OBDOBÍ: 30d, 90d, ytd
+export type Period = "day" | "week" | "month" | "all" | "30d" | "90d" | "ytd";
 
 function getStartOfWeek(year: number, week: number) {
   const d = new Date(year, 0, 4); 
@@ -59,6 +60,17 @@ export function getPeriodRange(period: Period, dateValue?: string): { from: stri
       from = new Date(from.getFullYear(), from.getMonth(), 1, 0, 0, 0, 0);
     }
     to = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
+  } else if (period === "30d") {
+    from.setDate(from.getDate() - 30);
+    from.setHours(0, 0, 0, 0);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "90d") {
+    from.setDate(from.getDate() - 90);
+    from.setHours(0, 0, 0, 0);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "ytd") {
+    from = new Date(from.getFullYear(), 0, 1, 0, 0, 0, 0);
+    to.setHours(23, 59, 59, 999);
   } else {
     from = new Date(2020, 0, 1);
   }
@@ -107,6 +119,21 @@ export function getPreviousPeriodRange(period: Period, dateValue?: string): { fr
       from = new Date(from.getFullYear(), from.getMonth() - 1, 1, 0, 0, 0, 0);
     }
     to = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
+  } else if (period === "30d") {
+    from.setDate(from.getDate() - 60);
+    from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setDate(to.getDate() + 29);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "90d") {
+    from.setDate(from.getDate() - 180);
+    from.setHours(0, 0, 0, 0);
+    to = new Date(from);
+    to.setDate(to.getDate() + 89);
+    to.setHours(23, 59, 59, 999);
+  } else if (period === "ytd") {
+    from = new Date(from.getFullYear() - 1, 0, 1, 0, 0, 0, 0);
+    to = new Date(from.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
   } else {
     from = new Date(2020, 0, 1);
   }
