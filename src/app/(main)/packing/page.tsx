@@ -240,7 +240,6 @@ export default function PackingPage() {
     });
 
     return Array.from(map.values()).map(entry => {
-      // OPRAVA TypeScriptu
       const opsArray = Array.from(entry.opsMap.entries()) as [string, number][];
       return {
         ...entry,
@@ -323,7 +322,7 @@ export default function PackingPage() {
                 <div className="glass-panel p-6 border-l-4 border-l-amber-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
                 <div className="text-3xl font-black text-white">{stats.uniqueOperators}</div>
-                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů</p>
+                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů (Ø {stats.uniqueOperators > 0 ? Math.round(stats.totalHUs / stats.uniqueOperators) : 0} HU/os)</p>
                 </div>
             </div>
 
@@ -425,7 +424,7 @@ export default function PackingPage() {
                 </div>
             </div>
 
-            {/* NOVÁ SEKCE: HODINOVÝ INTERAKTIVNÍ GRAF */}
+            {/* HODINOVÝ INTERAKTIVNÍ GRAF S KLIKACÍM DATUMEM */}
             {grouping === 'day' && (
               <div className="glass-panel overflow-hidden border-t-4 border-t-purple-500">
                 <div className="p-5 border-b border-white/5 bg-white/[0.02] flex items-center justify-between flex-wrap gap-4">
@@ -442,7 +441,12 @@ export default function PackingPage() {
                       type="date" 
                       value={dateValue}
                       onChange={(e) => setDateValue(e.target.value)}
-                      className="bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors"
+                      onClick={(e) => {
+                        if ('showPicker' in e.target) {
+                          (e.target as any).showPicker();
+                        }
+                      }}
+                      className="bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-lg px-4 py-2 text-sm font-bold text-purple-400 focus:outline-none focus:border-purple-400 transition-all cursor-pointer shadow-lg"
                     />
                   </div>
                 </div>
