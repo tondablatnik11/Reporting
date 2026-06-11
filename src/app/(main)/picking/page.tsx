@@ -24,7 +24,6 @@ function mapShiftNameToAB(dateStr: string, shiftCode: string) {
   return shiftAIsMorning ? (isMorning ? "A" : "B") : (isMorning ? "B" : "A");
 }
 
-// Custom Tooltip pro interaktivní hodinový graf
 const CustomHourlyTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
@@ -214,7 +213,6 @@ export default function PickingPage() {
     };
   }, [data, grouping]);
 
-  // Přepočet hodinového logu na formát pro Recharts
   const hourlyChartData = useMemo(() => {
     if (!hourlyDetails || hourlyDetails.length === 0) return [];
     const map = new Map<string, any>();
@@ -241,12 +239,14 @@ export default function PickingPage() {
       entry.opsMap.set(row.operator, (entry.opsMap.get(row.operator) || 0) + val);
     });
 
-    return Array.from(map.values()).map(entry => ({
-      ...entry,
-      operators: Array.from(entry.opsMap.entries())
-        .map(([name, val]) => ({ name, val: val as number }))
-        .sort((a, b) => b.val - a.val)
-    })).sort((a, b) => a.hour.localeCompare(b.hour));
+    return Array.from(map.values()).map(entry => {
+      // OPRAVA TypeScriptu: Přesně definujeme co je v poli
+      const opsArray = Array.from(entry.opsMap.entries()) as [string, number][];
+      return {
+        ...entry,
+        operators: opsArray.map(item => ({ name: item[0], val: item[1] })).sort((a, b) => b.val - a.val)
+      };
+    }).sort((a, b) => a.hour.localeCompare(b.hour));
   }, [hourlyDetails]);
 
   if (loading) {
@@ -303,7 +303,6 @@ export default function PickingPage() {
         </div>
       ) : (
         <>
-            {/* KPI KARTY */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 <div className="glass-panel p-6 border-l-4 border-l-blue-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Vychystáno (TO)</p>
@@ -323,11 +322,10 @@ export default function PickingPage() {
                 <div className="glass-panel p-6 border-l-4 border-l-amber-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
                 <div className="text-3xl font-black text-white">{stats.uniqueOperators}</div>
-                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Pickerů (Ø {stats.uniqueOperators > 0 ? Math.round(stats.totalTOs / stats.uniqueOperators) : 0} TO/os)</p>
+                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Pickerů</p>
                 </div>
             </div>
 
-            {/* DONUT GRAFY */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
                 <div className="flex-1 w-full text-center sm:text-left">
@@ -383,7 +381,6 @@ export default function PickingPage() {
                 </div>
             </div>
 
-            {/* VÝVOJOVÉ GRAFY */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="glass-panel p-6">
                 <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2"><Activity className="w-5 h-5 text-blue-400" /> Vývoj Pickingu (Kusy vs TO)</h3>
@@ -425,7 +422,6 @@ export default function PickingPage() {
                 </div>
             </div>
 
-            {/* NOVÁ SEKCE: HODINOVÝ INTERAKTIVNÍ GRAF */}
             {grouping === 'day' && (
               <div className="glass-panel overflow-hidden border-t-4 border-t-blue-500">
                 <div className="p-5 border-b border-white/5 bg-white/[0.02] flex items-center justify-between flex-wrap gap-4">
@@ -485,8 +481,8 @@ export default function PickingPage() {
                         <XAxis type="number" hide />
                         <YAxis dataKey="name" type="category" width={100} stroke="#ffffff80" fontSize={11} tickLine={false} axisLine={false} />
                         <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} formatter={(value: any) => [value, 'Transfer Ordery (TO)']} />
-                        <Bar dataKey="TOs" fill="#3b82f6" radius={[0,4,4,0]} barSize={16}>
-                        <LabelList dataKey="TOs" position="right" fill="#ffffff" fontSize={11} fontWeight="bold" />
+                        <Bar dataKey="tos" fill="#3b82f6" radius={[0,4,4,0]} barSize={16}>
+                        <LabelList dataKey="tos" position="right" fill="#ffffff" fontSize={11} fontWeight="bold" />
                         </Bar>
                     </BarChart>
                     </ResponsiveContainer>
