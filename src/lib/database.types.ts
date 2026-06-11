@@ -148,6 +148,20 @@ export interface Database {
         }
         Returns: any
       }
+      get_raw_picking: {
+        Args: {
+          p_start: string
+          p_end: string
+        }
+        Returns: any
+      }
+      get_raw_packing: {
+        Args: {
+          p_start: string
+          p_end: string
+        }
+        Returns: any
+      }
     }
     Views: {
       [_ in never]: never
