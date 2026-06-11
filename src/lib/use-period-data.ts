@@ -10,7 +10,6 @@ import {
   getShiftLabel,
 } from "@/lib/data-context";
 
-// PŘIDÁNY NOVÉ OBDOBÍ: 30d, 90d, ytd
 export type Period = "day" | "week" | "month" | "all" | "30d" | "90d" | "ytd";
 
 function getStartOfWeek(year: number, week: number) {
@@ -141,51 +140,15 @@ export function getPreviousPeriodRange(period: Period, dateValue?: string): { fr
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
-async function fetchCategoriesMap(deliveries: string[]): Promise<Record<string, string>> {
-  const uniqueDels = Array.from(new Set(deliveries.filter(d => !!d && d !== 'undefined')));
-  if (uniqueDels.length === 0) return {};
-  
-  const catMap: Record<string, string> = {};
-  const chunkSize = 200;
-  
-  for (let i = 0; i < uniqueDels.length; i += chunkSize) {
-    const chunk = uniqueDels.slice(i, i + chunkSize);
-    const strippedChunk = chunk.map(c => c.replace(/^0+/, ''));
-    const combinedChunk = Array.from(new Set([...chunk, ...strippedChunk]));
-
-    const { data, error } = await supabase
-      .from("likp_deliveries")
-      .select("delivery, shipping_point")
-      .in("delivery", combinedChunk);
-      
-    if (!error && data) {
-      data.forEach(d => {
-        let cat = "Normal";
-        if (d.shipping_point === "FM21" || d.shipping_point === "FM22") cat = "Express";
-        else if (d.shipping_point === "FM24") cat = "OE";
-        
-        catMap[d.delivery] = cat;
-        catMap[d.delivery.replace(/^0+/, '')] = cat; 
-      });
-    }
-  }
-  return catMap;
-}
-
 async function fetchPickingFromDb(from: string, to: string): Promise<PickingRecord[]> {
   let allData: any[] = [];
   let hasMore = true;
   let page = 0;
-  const pageSize = 1000;
+  const pageSize = 10000;
 
   while (hasMore) {
     const { data, error } = await supabase
-      .from("ltap_picking")
-      .select("tanum, tapos, picker_sap_id, dest_target_qty, weight, confirmed_at, delivery")
-      .gte("confirmed_at", from)
-      .lte("confirmed_at", to)
-      .not("picker_sap_id", "is", null)
-      .order("confirmed_at", { ascending: true })
+      .rpc('get_raw_picking', { p_start: from, p_end: to })
       .range(page * pageSize, (page + 1) * pageSize - 1);
 
     if (error) {
@@ -202,44 +165,27 @@ async function fetchPickingFromDb(from: string, to: string): Promise<PickingReco
     }
   }
 
-  const mapped = allData.map((r: any) => ({
-    to_number: r.tanum,
-    to_item: r.tapos,
-    operator: r.picker_sap_id || "",
-    quantity: Number(r.dest_target_qty) || 0,
+  return allData.map(r => ({
+    to_number: r.to_number,
+    to_item: r.to_item,
+    operator: r.operator,
+    quantity: Number(r.quantity) || 0,
     weight: Number(r.weight) || 0,
     confirmed_at: new Date(r.confirmed_at),
-    delivery: r.delivery || "",
-    category: 'Normal' 
+    delivery: r.delivery,
+    category: r.category || 'Normal'
   }));
-
-  const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
-  
-  mapped.forEach(m => { 
-      const cleanDel = m.delivery ? m.delivery.replace(/^0+/, '') : '';
-      let cat = 'Normal';
-      if (m.delivery && catMap[m.delivery]) cat = catMap[m.delivery];
-      else if (cleanDel && catMap[cleanDel]) cat = catMap[cleanDel];
-      m.category = cat; 
-  });
-
-  return mapped;
 }
 
 async function fetchPackingFromDb(from: string, to: string): Promise<PackingRecord[]> {
   let allData: any[] = [];
   let hasMore = true;
   let page = 0;
-  const pageSize = 1000;
+  const pageSize = 10000;
 
   while (hasMore) {
     const { data, error } = await supabase
-      .from("vekp_packing_headers")
-      .select("internal_hu_number, handling_unit, packer_sap_id, total_weight, packed_at, packaging_material, delivery, vepo_packing_items(packed_quantity, material, delivery)")
-      .gte("packed_at", from)
-      .lte("packed_at", to)
-      .not("packer_sap_id", "is", null)
-      .order("packed_at", { ascending: true })
+      .rpc('get_raw_packing', { p_start: from, p_end: to })
       .range(page * pageSize, (page + 1) * pageSize - 1);
 
     if (error) {
@@ -256,36 +202,17 @@ async function fetchPackingFromDb(from: string, to: string): Promise<PackingReco
     }
   }
 
-  const mapped = allData.map((r: any) => {
-    const vepoItems = Array.isArray(r.vepo_packing_items) ? r.vepo_packing_items : [];
-    const totalQuantity = vepoItems.reduce((sum: number, item: any) => sum + (Number(item.packed_quantity) || 0), 0);
-    const material = vepoItems.length > 0 ? vepoItems[0].material : r.packaging_material;
-    const del = r.delivery || vepoItems.find((v: any) => v.delivery)?.delivery || "";
-
-    return {
-      internal_hu: r.internal_hu_number,
-      hu_number: r.handling_unit,
-      operator: r.packer_sap_id || "",
-      weight: Number(r.total_weight) || 0,
-      quantity: totalQuantity,
-      created_at: new Date(r.packed_at),
-      material: material,
-      delivery: del,
-      category: 'Normal' 
-    };
-  });
-
-  const catMap = await fetchCategoriesMap(mapped.map(m => m.delivery));
-  
-  mapped.forEach(m => { 
-      const cleanDel = m.delivery ? m.delivery.replace(/^0+/, '') : '';
-      let cat = 'Normal';
-      if (m.delivery && catMap[m.delivery]) cat = catMap[m.delivery];
-      else if (cleanDel && catMap[cleanDel]) cat = catMap[cleanDel];
-      m.category = cat; 
-  });
-
-  return mapped;
+  return allData.map((r: any) => ({
+    internal_hu: r.internal_hu,
+    hu_number: r.hu_number,
+    operator: r.operator,
+    weight: Number(r.weight) || 0,
+    quantity: Number(r.quantity) || 0,
+    created_at: new Date(r.created_at),
+    material: r.material,
+    delivery: r.delivery,
+    category: r.category || 'Normal' 
+  }));
 }
 
 export function usePeriodData(
