@@ -1,115 +1,162 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Box, Users, Activity, AlertOctagon, Zap } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { Box, Users, Activity, AlertOctagon, Zap, Loader2, AlertCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import {
   ComposedChart, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList
 } from "recharts";
-import { useData, getShiftLabel } from "@/lib/data-context";
-import { usePeriodData, aggregateToChartData, type Period } from "@/lib/use-period-data";
-import PeriodSelector from "@/components/ui/PeriodSelector";
-import EmployeePerformance from "@/components/analytics/EmployeePerformance";
+import { getISOWeekNumber, getShiftConfig } from "@/lib/data-context";
+
+type TimeRange = '7d' | '30d' | '90d' | 'ytd' | 'all';
+type Grouping = 'day' | 'week' | 'month';
 
 const PRIORITIES_COLORS = { Normal: "#10b981", Express: "#f59e0b", OE: "#ef4444" };
 const SHIFT_COLORS = { A: "#10b981", B: "#fbbf24" };
 
+function mapShiftNameToAB(dateStr: string, shiftCode: string) {
+  if (shiftCode === 'C') return 'Mimo';
+  const d = new Date(dateStr);
+  const isEvenWeek = getISOWeekNumber(d) % 2 === 0;
+  const shiftAIsMorning = getShiftConfig().evenWeekShiftAMorning ? isEvenWeek : !isEvenWeek;
+  const isMorning = shiftCode === 'A';
+  return shiftAIsMorning ? (isMorning ? "A" : "B") : (isMorning ? "B" : "A");
+}
+
 export default function PackingPage() {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const [period, setPeriod] = useState<Period>("day");
-  const [dateValue, setDateValue] = useState<string>(todayStr);
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [grouping, setGrouping] = useState<Grouping>('day');
 
-  const { pickingData: localPicking, packingData: localPacking, likpData } = useData();
-  const { pickingData, packingData, previousPackingData, loading } = usePeriodData(
-    period, localPicking, localPacking, dateValue, false, "", likpData
-  );
+  useEffect(() => {
+    loadData(timeRange);
+  }, [timeRange]);
 
-  const chartData = useMemo(() => aggregateToChartData(pickingData, packingData, period, dateValue), [pickingData, packingData, period, dateValue]);
+  const loadData = async (range: TimeRange) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const end = new Date();
+      let start = new Date();
+      if (range === '7d') start.setDate(start.getDate() - 7);
+      else if (range === '30d') start.setDate(start.getDate() - 30);
+      else if (range === '90d') start.setDate(start.getDate() - 90);
+      else if (range === 'ytd') start = new Date(start.getFullYear(), 0, 1);
+      else if (range === 'all') start = new Date(2020, 0, 1);
 
-  // Aktuální KPI
-  const totalKs = packingData.reduce((s, r) => s + (r.quantity || 0), 0);
-  const totalHUs = new Set(packingData.map(r => r.internal_hu)).size;
-  const uniqueOperators = new Set(packingData.filter(r => r.operator).map(r => r.operator)).size;
+      const { data: dbData, error: dbError } = await supabase.rpc('get_packing_analytics_data', {
+        p_start_date: start.toISOString().split('T')[0],
+        p_end_date: end.toISOString().split('T')[0]
+      });
 
-  // Předchozí KPI (pro výpočet trendu)
-  const prevTotalKs = previousPackingData.reduce((s, r) => s + (r.quantity || 0), 0);
-  const prevTotalHUs = new Set(previousPackingData.map(r => r.internal_hu)).size;
-
-  const renderTrendBadge = (current: number, previous: number) => {
-    if (!previous || period === 'all') return null;
-    const diff = ((current - previous) / previous) * 100;
-    const isPos = diff >= 0;
-    return (
-      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ml-2 ${isPos ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-        {isPos ? '+' : ''}{diff.toFixed(1)}% vs minule
-      </span>
-    );
+      if (dbError) throw dbError;
+      setData(dbData || []);
+    } catch (err: any) {
+      console.error("Fetch error:", err);
+      setError(err.message || "Nepodařilo se načíst data z databáze.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Rozpad priorit
-  const priorityStats = useMemo(() => {
-    let nHu = 0, eHu = 0, oHu = 0;
-    const seenHUs = new Set<string>();
+  const { chartData, stats, priorityStats, shiftStats, operatorLeaderboard } = useMemo(() => {
+    let totalHUs = 0, totalKs = 0, nHu = 0, eHu = 0, oHu = 0, aHu = 0, bHu = 0;
+    const opsSet = new Set<string>();
+    const opsLeaderMap = new Map<string, { name: string, hus: number, ks: number }>();
+    const groupedMap = new Map<string, any>();
 
-    packingData.forEach(p => {
-      const key = p.internal_hu;
-      if (!seenHUs.has(key)) {
-        seenHUs.add(key);
-        const cat = p.category || 'Normal';
-        if (cat === 'Express') eHu++;
-        else if (cat === 'OE') oHu++;
-        else nHu++;
+    data.forEach(d => {
+      const dateObj = new Date(d.report_date);
+      let key = d.report_date;
+      let label = dateObj.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+
+      if (grouping === 'week') {
+        const w = getISOWeekNumber(dateObj);
+        key = `${dateObj.getFullYear()}-W${w}`;
+        label = `Týden ${w}`;
+      } else if (grouping === 'month') {
+        const m = dateObj.getMonth();
+        key = `${dateObj.getFullYear()}-${m}`;
+        label = dateObj.toLocaleDateString('cs-CZ', { month: 'long', year: 'numeric' });
       }
-    });
 
-    const total = nHu + eHu + oHu;
-    return [
-      { name: 'Normal', value: nHu, pct: total > 0 ? (nHu/total)*100 : 0, color: PRIORITIES_COLORS.Normal },
-      { name: 'Express', value: eHu, pct: total > 0 ? (eHu/total)*100 : 0, color: PRIORITIES_COLORS.Express },
-      { name: 'OE', value: oHu, pct: total > 0 ? (oHu/total)*100 : 0, color: PRIORITIES_COLORS.OE },
-    ].filter(x => x.value > 0);
-  }, [packingData]);
-
-  // Rozpad směn
-  const shiftStats = useMemo(() => {
-    let aHu = 0, bHu = 0;
-    const seenHUs = new Set<string>();
-
-    packingData.forEach(p => {
-      if (!p.created_at) return;
-      const key = p.internal_hu;
-      if (!seenHUs.has(key)) {
-        seenHUs.add(key);
-        const shift = getShiftLabel(new Date(p.created_at));
-        if (shift === 'A') aHu++;
-        else if (shift === 'B') bHu++;
+      if (!groupedMap.has(key)) {
+        groupedMap.set(key, { 
+            key, label, packingHUs: 0, packingKs: 0, 
+            packingNormal: 0, packingExpress: 0, packingOE: 0 
+        });
       }
+
+      const g = groupedMap.get(key)!;
+      const hus = Number(d.pack_hus);
+      const ks = Number(d.pack_qty);
+      const norm = Number(d.pack_normal_hus);
+      const exp = Number(d.pack_express_hus);
+      const oe = Number(d.pack_oe_hus);
+
+      g.packingHUs += hus;
+      g.packingKs += ks;
+      g.packingNormal += norm;
+      g.packingExpress += exp;
+      g.packingOE += oe;
+
+      totalHUs += hus;
+      totalKs += ks;
+      nHu += norm;
+      eHu += exp;
+      oHu += oe;
+
+      opsSet.add(d.operator);
+      if (!opsLeaderMap.has(d.operator)) opsLeaderMap.set(d.operator, { name: d.operator, hus: 0, ks: 0 });
+      const le = opsLeaderMap.get(d.operator)!;
+      le.hus += hus;
+      le.ks += ks;
+
+      const shiftAB = mapShiftNameToAB(d.report_date, d.shift_name);
+      if (shiftAB === 'A') aHu += hus;
+      else if (shiftAB === 'B') bHu += hus;
     });
 
-    const total = aHu + bHu;
-    return [
-      { name: 'Směna A', value: aHu, pct: total > 0 ? (aHu/total)*100 : 0, color: SHIFT_COLORS.A },
-      { name: 'Směna B', value: bHu, pct: total > 0 ? (bHu/total)*100 : 0, color: SHIFT_COLORS.B },
+    const fChartData = Array.from(groupedMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    const pStats = [
+      { name: 'Normal', value: nHu, pct: totalHUs ? (nHu/totalHUs)*100 : 0, color: PRIORITIES_COLORS.Normal },
+      { name: 'Express', value: eHu, pct: totalHUs ? (eHu/totalHUs)*100 : 0, color: PRIORITIES_COLORS.Express },
+      { name: 'OE', value: oHu, pct: totalHUs ? (oHu/totalHUs)*100 : 0, color: PRIORITIES_COLORS.OE },
     ].filter(x => x.value > 0);
-  }, [packingData]);
 
-  // Leaderboard operátorů
-  const operatorLeaderboard = useMemo(() => {
-    const map = new Map<string, { name: string, hus: Set<string>, ks: number }>();
-    packingData.forEach(p => {
-      if (!p.operator) return;
-      if (!map.has(p.operator)) map.set(p.operator, { name: p.operator, hus: new Set(), ks: 0 });
-      const entry = map.get(p.operator)!;
-      entry.hus.add(p.internal_hu);
-      entry.ks += (p.quantity || 0);
-    });
-    return Array.from(map.values())
-      .map(x => ({ name: x.name, HUs: x.hus.size, Ks: x.ks }))
-      .sort((a, b) => b.HUs - a.HUs)
-      .slice(0, 15); 
-  }, [packingData]);
+    const sStats = [
+      { name: 'Směna A', value: aHu, pct: (aHu+bHu) ? (aHu/(aHu+bHu))*100 : 0, color: SHIFT_COLORS.A },
+      { name: 'Směna B', value: bHu, pct: (aHu+bHu) ? (bHu/(aHu+bHu))*100 : 0, color: SHIFT_COLORS.B },
+    ].filter(x => x.value > 0);
 
-  const xKey = period === "day" ? "fullTime" : "time";
+    const opLead = Array.from(opsLeaderMap.values()).sort((a, b) => b.hus - a.hus).slice(0, 15);
+
+    return { 
+        chartData: fChartData, 
+        stats: { totalHUs, totalKs, uniqueOperators: opsSet.size }, 
+        priorityStats: pStats, 
+        shiftStats: sStats, 
+        operatorLeaderboard: opLead 
+    };
+  }, [data, grouping]);
+
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="w-8 h-8 text-purple-400 animate-spin" /></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="glass-panel p-8 text-center space-y-4">
+        <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
+        <h2 className="text-xl font-bold text-white">Chyba při načítání dat</h2>
+        <p className="text-white/60">{error}</p>
+        <button onClick={() => loadData(timeRange)} className="glass-button-primary mt-4">Zkusit znovu</button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in-up pb-10">
@@ -120,205 +167,175 @@ export default function PackingPage() {
           </h1>
           <p className="text-white/40 text-sm mt-1">Sledování výkonnosti balení a kompletace</p>
         </div>
-        <PeriodSelector 
-          period={period} 
-          onChangePeriod={setPeriod} 
-          dateValue={dateValue}
-          onChangeDate={setDateValue}
-          loading={loading}
-        />
-      </div>
-
-      {/* KPI KARTY */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="glass-panel p-6 border-l-4 border-l-purple-500/80 hover:bg-white/[0.03] transition-colors">
-          <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Zabaleno (HU)</p>
-          <div className="text-3xl font-black text-white flex items-center">
-            {totalHUs.toLocaleString()} {renderTrendBadge(totalHUs, prevTotalHUs)}
+        
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex items-center bg-white/5 p-1 rounded-xl border border-white/10">
+            {[ {id: 'day', label: 'Dny'}, {id: 'week', label: 'Týdny'}, {id: 'month', label: 'Měsíce'} ].map(g => (
+              <button key={g.id} onClick={() => setGrouping(g.id as Grouping)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${grouping === g.id ? 'bg-purple-500 text-white shadow-lg' : 'text-white/50 hover:text-white'}`}
+              >
+                {g.label}
+              </button>
+            ))}
           </div>
-          <p className="text-sm font-medium text-white/40 mt-1">Handling Units</p>
-        </div>
-
-        <div className="glass-panel p-6 border-l-4 border-l-purple-400/50 hover:bg-white/[0.03] transition-colors">
-          <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Objem (Ks)</p>
-          <div className="text-3xl font-black text-white flex items-center">
-            {totalKs.toLocaleString()} {renderTrendBadge(totalKs, prevTotalKs)}
+          <div className="flex items-center bg-white/5 p-1 rounded-xl border border-white/10">
+            {[ {id: '7d', label: '7 Dní'}, {id: '30d', label: '30 Dní'}, {id: '90d', label: '90 Dní'}, {id: 'ytd', label: 'Letos'}, {id: 'all', label: 'Vše'} ].map(r => (
+              <button key={r.id} onClick={() => setTimeRange(r.id as TimeRange)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${timeRange === r.id ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white'}`}
+              >
+                {r.label}
+              </button>
+            ))}
           </div>
-          <p className="text-sm font-medium text-white/40 mt-1">Fyzické kusy</p>
-        </div>
-
-        <div className="glass-panel p-6 border-l-4 border-l-emerald-500/80 hover:bg-white/[0.03] transition-colors">
-          <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Hustota (Ks/HU)</p>
-          <div className="text-3xl font-black text-white flex items-center">
-            {totalHUs > 0 ? (totalKs / totalHUs).toFixed(1) : "0"}
-            {renderTrendBadge(totalHUs > 0 ? (totalKs / totalHUs) : 0, prevTotalHUs > 0 ? (prevTotalKs / prevTotalHUs) : 0)}
-          </div>
-          <p className="text-sm font-medium text-white/40 mt-1">Průměr Ks na jednu HU</p>
-        </div>
-
-        <div className="glass-panel p-6 border-l-4 border-l-amber-500/80 hover:bg-white/[0.03] transition-colors">
-          <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
-          <div className="text-3xl font-black text-white flex items-center">
-            {uniqueOperators}
-          </div>
-          <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů (Ø {uniqueOperators > 0 ? Math.round(totalHUs / uniqueOperators) : 0} HU/os)</p>
         </div>
       </div>
 
-      {/* DONUT GRAFY (MIX) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
-          <div className="flex-1 w-full text-center sm:text-left">
-            <h3 className="text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2 mb-2">
-              <AlertOctagon className="w-5 h-5 text-rose-400" /> Mix Priorit
-            </h3>
-            <p className="text-xs text-white/40 mb-4">Podíl urgentních zakázek (Normal vs Express vs OE).</p>
-            <div className="space-y-2">
-              {priorityStats.map(s => (
-                <div key={s.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
-                    <span className="text-sm text-white/80">{s.name}</span>
-                  </div>
-                  <div className="text-sm font-bold text-white">{s.pct.toFixed(1)}% <span className="text-xs text-white/40 font-normal ml-1">({s.value})</span></div>
+      {data.length === 0 ? (
+        <div className="glass-panel p-8 text-center space-y-4">
+            <Box className="w-12 h-12 text-white/20 mx-auto" />
+            <h2 className="text-xl font-bold text-white">Nedostatek dat pro vybrané období</h2>
+        </div>
+      ) : (
+        <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div className="glass-panel p-6 border-l-4 border-l-purple-500/80">
+                <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Zabaleno (HU)</p>
+                <div className="text-3xl font-black text-white">{stats.totalHUs.toLocaleString()}</div>
+                <p className="text-sm font-medium text-white/40 mt-1">Handling Units</p>
                 </div>
-              ))}
-            </div>
-          </div>
-          <div className="w-40 h-40 shrink-0 relative">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={priorityStats} innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value" stroke="none">
-                  {priorityStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                </Pie>
-                <Tooltip formatter={(value: any, name: any) => [`${value} HU`, name]} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <span className="text-xl font-black text-white">{totalHUs}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
-          <div className="flex-1 w-full text-center sm:text-left">
-            <h3 className="text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2 mb-2">
-              <Zap className="w-5 h-5 text-amber-400" /> Podíl Směn
-            </h3>
-            <p className="text-xs text-white/40 mb-4">Která směna (A vs B) zabalila v tomto období více HU.</p>
-            <div className="space-y-2">
-              {shiftStats.map(s => (
-                <div key={s.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
-                    <span className="text-sm text-white/80">{s.name}</span>
-                  </div>
-                  <div className="text-sm font-bold text-white">{s.pct.toFixed(1)}% <span className="text-xs text-white/40 font-normal ml-1">({s.value})</span></div>
+                <div className="glass-panel p-6 border-l-4 border-l-purple-400/50">
+                <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Objem (Ks)</p>
+                <div className="text-3xl font-black text-white">{stats.totalKs.toLocaleString()}</div>
+                <p className="text-sm font-medium text-white/40 mt-1">Fyzické kusy</p>
                 </div>
-              ))}
+                <div className="glass-panel p-6 border-l-4 border-l-emerald-500/80">
+                <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Hustota (Ks/HU)</p>
+                <div className="text-3xl font-black text-white">{stats.totalHUs > 0 ? (stats.totalKs / stats.totalHUs).toFixed(1) : "0"}</div>
+                <p className="text-sm font-medium text-white/40 mt-1">Průměr Ks na jednu HU</p>
+                </div>
+                <div className="glass-panel p-6 border-l-4 border-l-amber-500/80">
+                <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
+                <div className="text-3xl font-black text-white">{stats.uniqueOperators}</div>
+                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů (Ø {stats.uniqueOperators > 0 ? Math.round(stats.totalHUs / stats.uniqueOperators) : 0} HU/os)</p>
+                </div>
             </div>
-          </div>
-          <div className="w-40 h-40 shrink-0 relative">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={shiftStats} innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value" stroke="none">
-                  {shiftStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                </Pie>
-                <Tooltip formatter={(value: any, name: any) => [`${value} HU`, name]} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
 
-      {/* DVOJGRAF TRENDŮ (ÚPRAVA: Grafy vedle sebe) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Celkový objem */}
-        <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-purple-400" /> Vývoj Packingu (Kusy vs HU)
-          </h3>
-          <p className="text-xs text-white/40 mb-6">Porovnání trendu Handling Units s fyzickým objemem (Ks).</p>
-          <div className="h-[280px] w-full">
-            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorKsPack" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#a855f7" stopOpacity={0.5}/>
-                      <stop offset="95%" stopColor="#a855f7" stopOpacity={0.0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="xKey" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
-                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  
-                  <Area yAxisId="left" type="monotone" dataKey="packing" name="Objem (Ks)" fill="url(#colorKsPack)" stroke="#a855f7" strokeWidth={2} />
-                  <Bar yAxisId="right" dataKey="packingHUs" name="Handling Unity (HU)" fill="#e4b4ff" radius={[2,2,0,0]} barSize={20} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
+                <div className="flex-1 w-full text-center sm:text-left">
+                    <h3 className="text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2 mb-2">
+                    <AlertOctagon className="w-5 h-5 text-rose-400" /> Mix Priorit
+                    </h3>
+                    <p className="text-xs text-white/40 mb-4">Podíl urgentních zakázek.</p>
+                    <div className="space-y-2">
+                    {priorityStats.map(s => (
+                        <div key={s.name} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} /><span className="text-sm text-white/80">{s.name}</span></div>
+                        <div className="text-sm font-bold text-white">{s.pct.toFixed(1)}% <span className="text-xs text-white/40 font-normal ml-1">({s.value})</span></div>
+                        </div>
+                    ))}
+                    </div>
+                </div>
+                <div className="w-40 h-40 shrink-0 relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie data={priorityStats} innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value" stroke="none">
+                        {priorityStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                        </Pie>
+                        <Tooltip formatter={(value: any, name: any) => [`${value} HU`, name]} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
+                    </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="text-xl font-black text-white">{stats.totalHUs}</span></div>
+                </div>
+                </div>
 
-        {/* NOVÉ: Hodinový/Časový rozpad priorit */}
-        <div className="glass-panel p-6">
-          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-            <AlertOctagon className="w-5 h-5 text-purple-400" /> Rozpad zakázek podle typu (HU)
-          </h3>
-          <p className="text-xs text-white/40 mb-6">Struktura typů zakázek (Normal / Express / OE) v průběhu času.</p>
-          <div className="h-[280px] w-full">
-            {loading ? <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div> : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey={xKey} stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
-                  <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
-                  <Bar dataKey="packingNormal" name="Normální" stackId="cat" fill="#10b981" />
-                  <Bar dataKey="packingExpress" name="Express" stackId="cat" fill="#f59e0b" />
-                  <Bar dataKey="packingOE" name="OE" stackId="cat" fill="#ef4444" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-      </div>
+                <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
+                <div className="flex-1 w-full text-center sm:text-left">
+                    <h3 className="text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2 mb-2">
+                    <Zap className="w-5 h-5 text-amber-400" /> Podíl Směn
+                    </h3>
+                    <p className="text-xs text-white/40 mb-4">Která směna (A vs B) zabalila více HU.</p>
+                    <div className="space-y-2">
+                    {shiftStats.map(s => (
+                        <div key={s.name} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} /><span className="text-sm text-white/80">{s.name}</span></div>
+                        <div className="text-sm font-bold text-white">{s.pct.toFixed(1)}% <span className="text-xs text-white/40 font-normal ml-1">({s.value})</span></div>
+                        </div>
+                    ))}
+                    </div>
+                </div>
+                <div className="w-40 h-40 shrink-0 relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie data={shiftStats} innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value" stroke="none">
+                        {shiftStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                        </Pie>
+                        <Tooltip formatter={(value: any, name: any) => [`${value} HU`, name]} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '8px', fontSize: '12px' }} />
+                    </PieChart>
+                    </ResponsiveContainer>
+                </div>
+                </div>
+            </div>
 
-      {/* LEADERBOARD OPERÁTORŮ */}
-      <div className="glass-panel p-6">
-        <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-          <Users className="w-5 h-5 text-purple-400" /> Produktivita Packerů (Top 15)
-        </h3>
-        <p className="text-xs text-white/40 mb-6">Žebříček operátorů podle celkového počtu zabalených HU za vybrané období.</p>
-        <div className="h-[400px] w-full">
-          {loading ? (
-            <div className="h-full flex items-center justify-center text-white/30">Načítám data...</div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={operatorLeaderboard} margin={{ top: 0, right: 40, left: 10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={true} vertical={false} />
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" width={100} stroke="#ffffff80" fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  cursor={{fill: 'rgba(255,255,255,0.05)'}} 
-                  contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} 
-                  formatter={(value: any, name: any) => [value, name === 'HUs' ? 'Handling Unity (HU)' : 'Kusy (Ks)']}
-                />
-                <Bar dataKey="HUs" fill="#a855f7" radius={[0,4,4,0]} barSize={16}>
-                  <LabelList dataKey="HUs" position="right" fill="#ffffff" fontSize={11} fontWeight="bold" />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="glass-panel p-6">
+                <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2"><Activity className="w-5 h-5 text-purple-400" /> Vývoj Packingu (Kusy vs HU)</h3>
+                <div className="h-[280px] w-full mt-6">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                            <linearGradient id="colorKsPack" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.5}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0.0}/></linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                        <XAxis dataKey="label" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="left" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                        <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                        <Area yAxisId="left" type="monotone" dataKey="packingKs" name="Objem (Ks)" fill="url(#colorKsPack)" stroke="#a855f7" strokeWidth={2} />
+                        <Bar yAxisId="right" dataKey="packingHUs" name="Handling Unity (HU)" fill="#e4b4ff" radius={[2,2,0,0]} />
+                        </ComposedChart>
+                    </ResponsiveContainer>
+                </div>
+                </div>
 
-      <EmployeePerformance filterType="packing" pickingData={pickingData} packingData={packingData} loading={loading} />
+                <div className="glass-panel p-6">
+                <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2"><AlertOctagon className="w-5 h-5 text-purple-400" /> Rozpad zakázek podle typu (HU)</h3>
+                <div className="h-[280px] w-full mt-6">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                        <XAxis dataKey="label" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                        <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
+                        <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                        <Bar dataKey="packingNormal" name="Normální" stackId="cat" fill="#10b981" />
+                        <Bar dataKey="packingExpress" name="Express" stackId="cat" fill="#f59e0b" />
+                        <Bar dataKey="packingOE" name="OE" stackId="cat" fill="#ef4444" />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+                </div>
+            </div>
+
+            <div className="glass-panel p-6">
+                <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2"><Users className="w-5 h-5 text-purple-400" /> Produktivita Packerů (Top 15)</h3>
+                <div className="h-[400px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                    <BarChart layout="vertical" data={operatorLeaderboard} margin={{ top: 0, right: 40, left: 10, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={true} vertical={false} />
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" width={100} stroke="#ffffff80" fontSize={11} tickLine={false} axisLine={false} />
+                        <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} formatter={(value: any, name: any) => [value, name === 'hus' ? 'Handling Unity (HU)' : 'Kusy (Ks)']} />
+                        <Bar dataKey="hus" fill="#a855f7" radius={[0,4,4,0]} barSize={16}>
+                        <LabelList dataKey="hus" position="right" fill="#ffffff" fontSize={11} fontWeight="bold" />
+                        </Bar>
+                    </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        </>
+      )}
     </div>
   );
 }
