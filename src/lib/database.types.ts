@@ -162,6 +162,20 @@ export interface Database {
         }
         Returns: any
       }
+      get_picking_analytics_data: {
+        Args: {
+          p_start_date: string
+          p_end_date: string
+        }
+        Returns: any
+      }
+      get_packing_analytics_data: {
+        Args: {
+          p_start_date: string
+          p_end_date: string
+        }
+        Returns: any
+      }
     }
     Views: {
       [_ in never]: never
