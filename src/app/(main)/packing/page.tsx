@@ -26,7 +26,6 @@ function mapShiftNameToAB(dateStr: string, shiftCode: string) {
 
 export default function PackingPage() {
   const todayStr = new Date().toISOString().split('T')[0];
-  const [period, setPeriod] = useState<Period>("day");
   const [dateValue, setDateValue] = useState<string>(todayStr);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any[]>([]);
@@ -34,7 +33,6 @@ export default function PackingPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [grouping, setGrouping] = useState<Grouping>('day');
   
-  // Nový stav pro hodinový detail u balení
   const [hourlyDetails, setHourlyDetails] = useState<any[]>([]);
   const [loadingHourly, setLoadingHourly] = useState(false);
 
@@ -343,12 +341,22 @@ export default function PackingPage() {
                 </div>
             </div>
 
-            {/* NOVÁ SEKCE: HODINOVÝ DENÍK PRO NEJNIŽŠÍ DETAIL (DNY) */}
             {grouping === 'day' && (
               <div className="glass-panel overflow-hidden border-t-4 border-t-purple-500">
-                <div className="p-5 border-b border-white/5 bg-white/[0.02] flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-purple-400" />
-                  <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Hodinový Provozní Log Operátorů (Audit dne)</h3>
+                <div className="p-5 border-b border-white/5 bg-white/[0.02] flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-purple-400" />
+                    <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Hodinový Provozní Log Operátorů (Audit dne)</h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-white/40 uppercase font-semibold">Vyberte den:</span>
+                    <input 
+                      type="date" 
+                      value={dateValue}
+                      onChange={(e) => setDateValue(e.target.value)}
+                      className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
                 </div>
                 {loadingHourly ? (
                   <div className="p-8 text-center text-white/30 flex items-center justify-center gap-2">
