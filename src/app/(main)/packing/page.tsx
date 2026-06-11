@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { Box, Users, Activity, AlertOctagon, Zap, Loader2, AlertCircle } from "lucide-react";
+import { Box, Users, Activity, AlertOctagon, Zap, Loader2, AlertCircle, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   ComposedChart, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
@@ -25,15 +25,28 @@ function mapShiftNameToAB(dateStr: string, shiftCode: string) {
 }
 
 export default function PackingPage() {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [period, setPeriod] = useState<Period>("day");
+  const [dateValue, setDateValue] = useState<string>(todayStr);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [grouping, setGrouping] = useState<Grouping>('day');
+  
+  // Nový stav pro hodinový detail u balení
+  const [hourlyDetails, setHourlyDetails] = useState<any[]>([]);
+  const [loadingHourly, setLoadingHourly] = useState(false);
 
   useEffect(() => {
     loadData(timeRange);
   }, [timeRange]);
+
+  useEffect(() => {
+    if (grouping === 'day' && data.length > 0) {
+      loadHourlyDetail(dateValue);
+    }
+  }, [grouping, dateValue, data]);
 
   const loadData = async (range: TimeRange) => {
     setLoading(true);
@@ -59,6 +72,20 @@ export default function PackingPage() {
       setError(err.message || "Nepodařilo se načíst data z databáze.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadHourlyDetail = async (targetDate: string) => {
+    setLoadingHourly(true);
+    try {
+      const { data: hData, error: hError } = await supabase.rpc('get_packing_hourly_detail', {
+        p_date: targetDate
+      });
+      if (!hError) setHourlyDetails(hData || []);
+    } catch (err) {
+      console.error("Hourly detail fetch error:", err);
+    } finally {
+      setLoadingHourly(false);
     }
   };
 
@@ -216,7 +243,7 @@ export default function PackingPage() {
                 <div className="glass-panel p-6 border-l-4 border-l-amber-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
                 <div className="text-3xl font-black text-white">{stats.uniqueOperators}</div>
-                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů (Ø {stats.uniqueOperators > 0 ? Math.round(stats.totalHUs / stats.uniqueOperators) : 0} HU/os)</p>
+                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů</p>
                 </div>
             </div>
 
@@ -226,7 +253,6 @@ export default function PackingPage() {
                     <h3 className="text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2 mb-2">
                     <AlertOctagon className="w-5 h-5 text-rose-400" /> Mix Priorit
                     </h3>
-                    <p className="text-xs text-white/40 mb-4">Podíl urgentních zakázek.</p>
                     <div className="space-y-2">
                     {priorityStats.map(s => (
                         <div key={s.name} className="flex items-center justify-between">
@@ -254,7 +280,6 @@ export default function PackingPage() {
                     <h3 className="text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2 mb-2">
                     <Zap className="w-5 h-5 text-amber-400" /> Podíl Směn
                     </h3>
-                    <p className="text-xs text-white/40 mb-4">Která směna (A vs B) zabalila více HU.</p>
                     <div className="space-y-2">
                     {shiftStats.map(s => (
                         <div key={s.name} className="flex items-center justify-between">
@@ -318,6 +343,52 @@ export default function PackingPage() {
                 </div>
             </div>
 
+            {/* NOVÁ SEKCE: HODINOVÝ DENÍK PRO NEJNIŽŠÍ DETAIL (DNY) */}
+            {grouping === 'day' && (
+              <div className="glass-panel overflow-hidden border-t-4 border-t-purple-500">
+                <div className="p-5 border-b border-white/5 bg-white/[0.02] flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-purple-400" />
+                  <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Hodinový Provozní Log Operátorů (Audit dne)</h3>
+                </div>
+                {loadingHourly ? (
+                  <div className="p-8 text-center text-white/30 flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-purple-400" /> Načítám podrobný hodinový log...
+                  </div>
+                ) : hourlyDetails.length === 0 ? (
+                  <div className="p-8 text-center text-white/30">Pro tento den nejsou k dispozici hodinové záznamy.</div>
+                ) : (
+                  <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="sticky top-0 bg-[#121625] z-10 shadow-md">
+                        <tr className="border-b border-white/5">
+                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase">Časové Okno</th>
+                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase">Operátor</th>
+                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase">Priorita</th>
+                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase text-right">Zabaleno HU</th>
+                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase text-right">Celkem Ks</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {hourlyDetails.map((row, i) => (
+                          <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                            <td className="px-5 py-2.5 text-sm font-bold text-purple-400">{row.hour_slot} - {String(Number(row.hour_slot.split(':')[0])+1).padStart(2,'0')}:00</td>
+                            <td className="px-5 py-2.5 text-sm text-white/80 font-medium">{row.operator}</td>
+                            <td className="px-5 py-2.5 text-sm">
+                              <span className={`px-2 py-0.5 rounded text-xs font-bold ${row.category === 'Express' ? 'bg-amber-500/20 text-amber-400' : row.category === 'OE' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                {row.category}
+                              </span>
+                            </td>
+                            <td className="px-5 py-2.5 text-sm text-right font-bold text-white">{row.pack_hus}</td>
+                            <td className="px-5 py-2.5 text-sm text-right font-bold text-white/60">{Number(row.pack_qty).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="glass-panel p-6">
                 <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2"><Users className="w-5 h-5 text-purple-400" /> Produktivita Packerů (Top 15)</h3>
                 <div className="h-[400px] w-full">
@@ -326,7 +397,7 @@ export default function PackingPage() {
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={true} vertical={false} />
                         <XAxis type="number" hide />
                         <YAxis dataKey="name" type="category" width={100} stroke="#ffffff80" fontSize={11} tickLine={false} axisLine={false} />
-                        <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} formatter={(value: any, name: any) => [value, name === 'hus' ? 'Handling Unity (HU)' : 'Kusy (Ks)']} />
+                        <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} formatter={(value: any) => [value, 'Handling Unity (HU)']} />
                         <Bar dataKey="hus" fill="#a855f7" radius={[0,4,4,0]} barSize={16}>
                         <LabelList dataKey="hus" position="right" fill="#ffffff" fontSize={11} fontWeight="bold" />
                         </Bar>
