@@ -24,6 +24,52 @@ function mapShiftNameToAB(dateStr: string, shiftCode: string) {
   return shiftAIsMorning ? (isMorning ? "A" : "B") : (isMorning ? "B" : "A");
 }
 
+// Custom Tooltip pro interaktivní hodinový graf u balení
+const CustomHourlyTooltipPacking = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-[#0a0e1e]/95 border border-white/10 p-4 rounded-xl shadow-2xl min-w-[260px] backdrop-blur-md z-50">
+        <p className="text-white font-bold mb-3 pb-2 border-b border-white/10 flex justify-between items-center">
+          <span className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-purple-400"/> {data.label}</span>
+          <span className="bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded text-xs font-bold">{data.total} HU</span>
+        </p>
+        <div className="space-y-1.5 mb-4">
+          {payload.map((entry: any) => (
+             entry.value > 0 && (
+               <div key={entry.dataKey} className="flex justify-between items-center text-xs">
+                 <span className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full" style={{backgroundColor: entry.fill}}></div>
+                    <span className="text-white/70">{entry.name}</span>
+                 </span>
+                 <span className="font-bold text-white">{entry.value}</span>
+               </div>
+             )
+          ))}
+          <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5 mt-1">
+             <span className="text-white/50">Fyzický objem:</span>
+             <span className="font-bold text-white/60">{data.totalKs.toLocaleString()} Ks</span>
+          </div>
+        </div>
+        {data.operators.length > 0 && (
+          <>
+            <p className="text-[10px] uppercase tracking-wider text-white/40 mb-2 font-semibold">Aktivní operátoři v tuto hodinu:</p>
+            <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2">
+              {data.operators.map((op: any, i: number) => (
+                <div key={i} className="flex justify-between items-center text-xs">
+                   <span className="text-white/80 truncate max-w-[150px]"><span className="text-white/30 mr-1">{i+1}.</span> {op.name}</span>
+                   <span className="font-bold text-purple-400">{op.val} HU</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function PackingPage() {
   const todayStr = new Date().toISOString().split('T')[0];
   const [dateValue, setDateValue] = useState<string>(todayStr);
@@ -168,6 +214,40 @@ export default function PackingPage() {
     };
   }, [data, grouping]);
 
+  const hourlyChartData = useMemo(() => {
+    if (!hourlyDetails || hourlyDetails.length === 0) return [];
+    const map = new Map<string, any>();
+
+    hourlyDetails.forEach(row => {
+      const h = row.hour_slot;
+      if (!map.has(h)) {
+        map.set(h, {
+          hour: h,
+          label: `${h} - ${String(Number(h.split(':')[0])+1).padStart(2,'0')}:00`,
+          Normal: 0, Express: 0, OE: 0,
+          total: 0, totalKs: 0,
+          opsMap: new Map<string, number>()
+        });
+      }
+      const entry = map.get(h)!;
+      const val = Number(row.pack_hus) || 0;
+      const ks = Number(row.pack_qty) || 0;
+      const cat = row.category || 'Normal';
+
+      entry[cat] += val;
+      entry.total += val;
+      entry.totalKs += ks;
+      entry.opsMap.set(row.operator, (entry.opsMap.get(row.operator) || 0) + val);
+    });
+
+    return Array.from(map.values()).map(entry => ({
+      ...entry,
+      operators: Array.from(entry.opsMap.entries())
+        .map(([name, val]) => ({ name, val: val as number }))
+        .sort((a, b) => b.val - a.val)
+    })).sort((a, b) => a.hour.localeCompare(b.hour));
+  }, [hourlyDetails]);
+
   if (loading) {
     return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="w-8 h-8 text-purple-400 animate-spin" /></div>;
   }
@@ -222,6 +302,7 @@ export default function PackingPage() {
         </div>
       ) : (
         <>
+            {/* KPI KARTY */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 <div className="glass-panel p-6 border-l-4 border-l-purple-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Zabaleno (HU)</p>
@@ -241,10 +322,11 @@ export default function PackingPage() {
                 <div className="glass-panel p-6 border-l-4 border-l-amber-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
                 <div className="text-3xl font-black text-white">{stats.uniqueOperators}</div>
-                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů</p>
+                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů (Ø {stats.uniqueOperators > 0 ? Math.round(stats.totalHUs / stats.uniqueOperators) : 0} HU/os)</p>
                 </div>
             </div>
 
+            {/* DONUT GRAFY */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
                 <div className="flex-1 w-full text-center sm:text-left">
@@ -300,6 +382,7 @@ export default function PackingPage() {
                 </div>
             </div>
 
+            {/* VÝVOJOVÉ GRAFY */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="glass-panel p-6">
                 <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2"><Activity className="w-5 h-5 text-purple-400" /> Vývoj Packingu (Kusy vs HU)</h3>
@@ -341,59 +424,54 @@ export default function PackingPage() {
                 </div>
             </div>
 
+            {/* NOVÁ SEKCE: HODINOVÝ INTERAKTIVNÍ GRAF */}
             {grouping === 'day' && (
               <div className="glass-panel overflow-hidden border-t-4 border-t-purple-500">
                 <div className="p-5 border-b border-white/5 bg-white/[0.02] flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-2">
                     <Clock className="w-5 h-5 text-purple-400" />
-                    <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Hodinový Provozní Log Operátorů (Audit dne)</h3>
+                    <div>
+                      <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider">Hodinový Provozní Log Operátorů</h3>
+                      <p className="text-xs text-white/40 mt-0.5">Sledování plynulosti odbavení během vybraného dne (Najetím na sloupec zobrazíš detaily)</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-white/40 uppercase font-semibold">Vyberte den:</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-white/40 uppercase font-semibold">Vyberte den pro audit:</span>
                     <input 
                       type="date" 
                       value={dateValue}
                       onChange={(e) => setDateValue(e.target.value)}
-                      className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500"
+                      className="bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors"
                     />
                   </div>
                 </div>
-                {loadingHourly ? (
-                  <div className="p-8 text-center text-white/30 flex items-center justify-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-400" /> Načítám podrobný hodinový log...
-                  </div>
-                ) : hourlyDetails.length === 0 ? (
-                  <div className="p-8 text-center text-white/30">Pro tento den nejsou k dispozici hodinové záznamy.</div>
-                ) : (
-                  <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="sticky top-0 bg-[#121625] z-10 shadow-md">
-                        <tr className="border-b border-white/5">
-                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase">Časové Okno</th>
-                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase">Operátor</th>
-                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase">Priorita</th>
-                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase text-right">Zabaleno HU</th>
-                          <th className="px-5 py-3 text-xs font-semibold text-white/40 uppercase text-right">Celkem Ks</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {hourlyDetails.map((row, i) => (
-                          <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                            <td className="px-5 py-2.5 text-sm font-bold text-purple-400">{row.hour_slot} - {String(Number(row.hour_slot.split(':')[0])+1).padStart(2,'0')}:00</td>
-                            <td className="px-5 py-2.5 text-sm text-white/80 font-medium">{row.operator}</td>
-                            <td className="px-5 py-2.5 text-sm">
-                              <span className={`px-2 py-0.5 rounded text-xs font-bold ${row.category === 'Express' ? 'bg-amber-500/20 text-amber-400' : row.category === 'OE' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                                {row.category}
-                              </span>
-                            </td>
-                            <td className="px-5 py-2.5 text-sm text-right font-bold text-white">{row.pack_hus}</td>
-                            <td className="px-5 py-2.5 text-sm text-right font-bold text-white/60">{Number(row.pack_qty).toLocaleString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                
+                <div className="p-6">
+                  {loadingHourly ? (
+                    <div className="h-[350px] flex items-center justify-center gap-3 text-white/30">
+                      <Loader2 className="w-6 h-6 animate-spin text-purple-400" /> Načítám hodinový log...
+                    </div>
+                  ) : hourlyChartData.length === 0 ? (
+                    <div className="h-[350px] flex items-center justify-center text-white/30">
+                      Pro vybraný den ({new Date(dateValue).toLocaleDateString('cs-CZ')}) nejsou k dispozici žádné hodinové záznamy.
+                    </div>
+                  ) : (
+                    <div className="h-[350px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={hourlyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                          <XAxis dataKey="hour" stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} />
+                          <YAxis stroke="rgba(255,255,255,0.25)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                          <Tooltip content={<CustomHourlyTooltipPacking />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                          <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
+                          <Bar dataKey="Normal" name="Normální" stackId="a" fill="#10b981" />
+                          <Bar dataKey="Express" name="Express" stackId="a" fill="#f59e0b" />
+                          <Bar dataKey="OE" name="OE" stackId="a" fill="#ef4444" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
