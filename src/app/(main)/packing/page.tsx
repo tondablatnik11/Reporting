@@ -24,7 +24,6 @@ function mapShiftNameToAB(dateStr: string, shiftCode: string) {
   return shiftAIsMorning ? (isMorning ? "A" : "B") : (isMorning ? "B" : "A");
 }
 
-// Custom Tooltip pro interaktivní hodinový graf u balení
 const CustomHourlyTooltipPacking = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
@@ -240,12 +239,14 @@ export default function PackingPage() {
       entry.opsMap.set(row.operator, (entry.opsMap.get(row.operator) || 0) + val);
     });
 
-    return Array.from(map.values()).map(entry => ({
-      ...entry,
-      operators: Array.from(entry.opsMap.entries())
-        .map(([name, val]) => ({ name, val: val as number }))
-        .sort((a, b) => b.val - a.val)
-    })).sort((a, b) => a.hour.localeCompare(b.hour));
+    return Array.from(map.values()).map(entry => {
+      // OPRAVA TypeScriptu
+      const opsArray = Array.from(entry.opsMap.entries()) as [string, number][];
+      return {
+        ...entry,
+        operators: opsArray.map(item => ({ name: item[0], val: item[1] })).sort((a, b) => b.val - a.val)
+      };
+    }).sort((a, b) => a.hour.localeCompare(b.hour));
   }, [hourlyDetails]);
 
   if (loading) {
@@ -322,7 +323,7 @@ export default function PackingPage() {
                 <div className="glass-panel p-6 border-l-4 border-l-amber-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
                 <div className="text-3xl font-black text-white">{stats.uniqueOperators}</div>
-                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů (Ø {stats.uniqueOperators > 0 ? Math.round(stats.totalHUs / stats.uniqueOperators) : 0} HU/os)</p>
+                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Packerů</p>
                 </div>
             </div>
 
