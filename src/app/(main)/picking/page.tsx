@@ -240,7 +240,6 @@ export default function PickingPage() {
     });
 
     return Array.from(map.values()).map(entry => {
-      // OPRAVA TypeScriptu: Přesně definujeme co je v poli
       const opsArray = Array.from(entry.opsMap.entries()) as [string, number][];
       return {
         ...entry,
@@ -303,6 +302,7 @@ export default function PickingPage() {
         </div>
       ) : (
         <>
+            {/* KPI KARTY */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 <div className="glass-panel p-6 border-l-4 border-l-blue-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Vychystáno (TO)</p>
@@ -322,10 +322,11 @@ export default function PickingPage() {
                 <div className="glass-panel p-6 border-l-4 border-l-amber-500/80">
                 <p className="text-xs font-semibold text-white/50 tracking-wider uppercase mb-1">Lidské zdroje</p>
                 <div className="text-3xl font-black text-white">{stats.uniqueOperators}</div>
-                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Pickerů</p>
+                <p className="text-sm font-medium text-white/40 mt-1">Aktivních Pickerů (Ø {stats.uniqueOperators > 0 ? Math.round(stats.totalTOs / stats.uniqueOperators) : 0} TO/os)</p>
                 </div>
             </div>
 
+            {/* DONUT GRAFY */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="glass-panel p-6 flex flex-col sm:flex-row items-center gap-6">
                 <div className="flex-1 w-full text-center sm:text-left">
@@ -381,6 +382,7 @@ export default function PickingPage() {
                 </div>
             </div>
 
+            {/* VÝVOJOVÉ GRAFY */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="glass-panel p-6">
                 <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2"><Activity className="w-5 h-5 text-blue-400" /> Vývoj Pickingu (Kusy vs TO)</h3>
@@ -422,6 +424,7 @@ export default function PickingPage() {
                 </div>
             </div>
 
+            {/* HODINOVÝ INTERAKTIVNÍ GRAF S KLIKACÍM DATUMEM */}
             {grouping === 'day' && (
               <div className="glass-panel overflow-hidden border-t-4 border-t-blue-500">
                 <div className="p-5 border-b border-white/5 bg-white/[0.02] flex items-center justify-between flex-wrap gap-4">
@@ -433,12 +436,17 @@ export default function PickingPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-white/40 uppercase font-semibold">Vyberte den pro audit:</span>
+                    <span className="text-xs text-white/40 uppercase font-semibold">Vyberte den:</span>
                     <input 
                       type="date" 
                       value={dateValue}
                       onChange={(e) => setDateValue(e.target.value)}
-                      className="bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                      onClick={(e) => {
+                        if ('showPicker' in e.target) {
+                          (e.target as any).showPicker();
+                        }
+                      }}
+                      className="bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-lg px-4 py-2 text-sm font-bold text-blue-400 focus:outline-none focus:border-blue-400 transition-all cursor-pointer shadow-lg"
                     />
                   </div>
                 </div>
