@@ -176,6 +176,18 @@ export interface Database {
         }
         Returns: any
       }
+      get_picking_hourly_detail: {
+        Args: {
+          p_date: string
+        }
+        Returns: any
+      }
+      get_packing_hourly_detail: {
+        Args: {
+          p_date: string
+        }
+        Returns: any
+      }
     }
     Views: {
       [_ in never]: never
