@@ -38,13 +38,14 @@ export default function DashboardOverviewPage() {
   }, [timeRange, dateValue]);
 
   // Pomocná funkce pro prolomení limitu 1000 záznamů v Supabase
-  const fetchAllRows = async (rpcName: string, params: any) => {
+  const fetchAllRows = async (rpcName: any, params: any) => {
     let allData: any[] = [];
     let hasMore = true;
     let page = 0;
     const pageSize = 1000;
     while (hasMore) {
-      const { data, error } = await supabase.rpc(rpcName, params).range(page * pageSize, (page + 1) * pageSize - 1);
+      // Zde je oprava pro TypeScript (as any)
+      const { data, error } = await supabase.rpc(rpcName as any, params).range(page * pageSize, (page + 1) * pageSize - 1);
       if (error) throw error;
       if (data && data.length > 0) {
         allData = [...allData, ...data];
@@ -61,7 +62,7 @@ export default function DashboardOverviewPage() {
     setLoading(true);
     setError(null);
     try {
-      const end = new Date();
+      let end = new Date();
       let start = new Date();
 
       if (range === 'day') {
