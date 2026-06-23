@@ -3,15 +3,14 @@
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  LayoutDashboard, Users, Box, PackageSearch, Activity, TrendingUp, AlertTriangle, CheckCircle2, Loader2, Calendar, Target, Clock
+  LayoutDashboard, Users, Box, PackageSearch, Activity, TrendingUp, AlertTriangle, CheckCircle2, Loader2, Target
 } from "lucide-react";
 import {
-  ComposedChart, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
 import { getISOWeekNumber, getShiftConfig } from "@/lib/data-context";
 
-type TimeRange = 'today' | '7d' | '30d' | '90d' | 'ytd' | 'all';
+type TimeRange = 'day' | '7d' | '30d' | '90d' | 'ytd' | 'all';
 
 function mapShiftNameToAB(dateStr: string, shiftCode: string) {
   if (shiftCode === 'C' || shiftCode === 'Mimo') return 'Mimo';
@@ -23,43 +22,89 @@ function mapShiftNameToAB(dateStr: string, shiftCode: string) {
 }
 
 export default function DashboardOverviewPage() {
+  const todayStr = new Date().toISOString().split('T')[0];
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [dateValue, setDateValue] = useState<string>(todayStr);
 
   const [pickData, setPickData] = useState<any[]>([]);
   const [packData, setPackData] = useState<any[]>([]);
+  const [hourlyPickData, setHourlyPickData] = useState<any[]>([]);
+  const [hourlyPackData, setHourlyPackData] = useState<any[]>([]);
 
   useEffect(() => {
-    loadData(timeRange);
-  }, [timeRange]);
+    loadData(timeRange, dateValue);
+  }, [timeRange, dateValue]);
 
-  const loadData = async (range: TimeRange) => {
+  // Pomocná funkce pro prolomení limitu 1000 záznamů v Supabase
+  const fetchAllRows = async (rpcName: string, params: any) => {
+    let allData: any[] = [];
+    let hasMore = true;
+    let page = 0;
+    const pageSize = 1000;
+    while (hasMore) {
+      const { data, error } = await supabase.rpc(rpcName, params).range(page * pageSize, (page + 1) * pageSize - 1);
+      if (error) throw error;
+      if (data && data.length > 0) {
+        allData = [...allData, ...data];
+        page++;
+        if (data.length < pageSize) hasMore = false;
+      } else {
+        hasMore = false;
+      }
+    }
+    return allData;
+  };
+
+  const loadData = async (range: TimeRange, targetDate: string) => {
     setLoading(true);
     setError(null);
     try {
       const end = new Date();
       let start = new Date();
-      if (range === 'today') { start.setHours(0,0,0,0); }
-      else if (range === '7d') { start.setDate(start.getDate() - 7); }
-      else if (range === '30d') { start.setDate(start.getDate() - 30); }
-      else if (range === '90d') { start.setDate(start.getDate() - 90); }
-      else if (range === 'ytd') { start = new Date(start.getFullYear(), 0, 1); }
-      else if (range === 'all') { start = new Date(2020, 0, 1); }
+
+      if (range === 'day') {
+        start = new Date(targetDate);
+        end = new Date(targetDate);
+      } else if (range === '7d') { 
+        start.setDate(end.getDate() - 7); 
+      } else if (range === '30d') { 
+        start.setDate(end.getDate() - 30); 
+      } else if (range === '90d') { 
+        start.setDate(end.getDate() - 90); 
+      } else if (range === 'ytd') { 
+        start = new Date(start.getFullYear(), 0, 1); 
+      } else if (range === 'all') { 
+        start = new Date(2020, 0, 1); 
+      }
 
       const startStr = start.toISOString().split('T')[0];
       const endStr = end.toISOString().split('T')[0];
 
+      // Paralelní stažení denních dat (stránkováno přes všechny záznamy)
       const [pickRes, packRes] = await Promise.all([
-        supabase.rpc('get_picking_analytics_data', { p_start_date: startStr, p_end_date: endStr }),
-        supabase.rpc('get_packing_analytics_data', { p_start_date: startStr, p_end_date: endStr })
+        fetchAllRows('get_picking_analytics_data', { p_start_date: startStr, p_end_date: endStr }),
+        fetchAllRows('get_packing_analytics_data', { p_start_date: startStr, p_end_date: endStr })
       ]);
 
-      if (pickRes.error) throw pickRes.error;
-      if (packRes.error) throw packRes.error;
+      let hpData: any[] = [];
+      let hpkData: any[] = [];
 
-      setPickData(pickRes.data || []);
-      setPackData(packRes.data || []);
+      // Pokud sledujeme pouze jeden den, stáhneme i detailní hodinová data pro graf
+      if (range === 'day') {
+        const [hPickRes, hPackRes] = await Promise.all([
+          supabase.rpc('get_picking_hourly_detail', { p_date: targetDate }),
+          supabase.rpc('get_packing_hourly_detail', { p_date: targetDate })
+        ]);
+        if (hPickRes.data) hpData = hPickRes.data;
+        if (hPackRes.data) hpkData = hPackRes.data;
+      }
+
+      setPickData(pickRes || []);
+      setPackData(packRes || []);
+      setHourlyPickData(hpData);
+      setHourlyPackData(hpkData);
     } catch (err: any) {
       console.error("Dashboard fetch error:", err);
       setError(err.message || "Nepodařilo se načíst data pro Přehled.");
@@ -69,32 +114,19 @@ export default function DashboardOverviewPage() {
   };
 
   const dashboardMetrics = useMemo(() => {
-    // 1. ZÁKLADNÍ SOUČTY (Celkový objem)
     let pickTOs = 0, pickKs = 0, pickOpsSet = new Set<string>();
     let packHUs = 0, packKs = 0, packOpsSet = new Set<string>();
 
-    // 2. SMĚNY (A vs B)
     let shiftA = { pickTOs: 0, packHUs: 0, pickOps: new Set<string>(), packOps: new Set<string>() };
     let shiftB = { pickTOs: 0, packHUs: 0, pickOps: new Set<string>(), packOps: new Set<string>() };
 
-    // 3. GRAF V ČASE
-    const chartMap = new Map<string, any>();
-
-    // 4. LEADERBOARD OPERÁTORŮ
     const pickersMap = new Map<string, { name: string, tos: number, ks: number }>();
     const packersMap = new Map<string, { name: string, hus: number, ks: number }>();
 
-    // 5. DETAILNÍ PRŮMĚRY (Math)
-    const pickAverages = {
-      shiftsSet: new Set<string>(), opShifts: 0,
-      tos: 0, norm: 0, exp: 0, oe: 0
-    };
-    const packAverages = {
-      shiftsSet: new Set<string>(), opShifts: 0,
-      hus: 0, norm: 0, exp: 0, oe: 0
-    };
+    const pickAverages = { shiftsSet: new Set<string>(), opShifts: 0, tos: 0, norm: 0, exp: 0, oe: 0 };
+    const packAverages = { shiftsSet: new Set<string>(), opShifts: 0, hus: 0, norm: 0, exp: 0, oe: 0 };
 
-    // Zpracování Pickingu
+    // Zpracování Pickingu pro tabulky a KPI
     pickData.forEach(d => {
       const tos = Number(d.pick_tos);
       const ks = Number(d.pick_qty);
@@ -104,26 +136,16 @@ export default function DashboardOverviewPage() {
       pickKs += ks;
       pickOpsSet.add(d.operator);
 
-      // Leaderboard
       if (!pickersMap.has(d.operator)) pickersMap.set(d.operator, { name: d.operator, tos: 0, ks: 0 });
       pickersMap.get(d.operator)!.tos += tos;
       pickersMap.get(d.operator)!.ks += ks;
 
-      // Směny
       if (shiftAB === 'A') { shiftA.pickTOs += tos; shiftA.pickOps.add(d.operator); }
       if (shiftAB === 'B') { shiftB.pickTOs += tos; shiftB.pickOps.add(d.operator); }
 
-      // Graf
-      const dKey = new Date(d.report_date).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
-      if (!chartMap.has(dKey)) chartMap.set(dKey, { date: dKey, sortDate: d.report_date, pTos: 0, pHus: 0, pOpsSet: new Set(), paOpsSet: new Set() });
-      const cRow = chartMap.get(dKey)!;
-      cRow.pTos += tos;
-      cRow.pOpsSet.add(d.operator);
-
-      // Průměry (ignorujeme víkendy "Mimo" pro přesnější průměry pracovních směn)
       if (shiftAB !== 'Mimo') {
         pickAverages.shiftsSet.add(`${d.report_date}_${shiftAB}`);
-        pickAverages.opShifts += 1; // 1 řádek = 1 operátor za 1 směnu
+        pickAverages.opShifts += 1;
         pickAverages.tos += tos;
         pickAverages.norm += Number(d.pick_normal_tos);
         pickAverages.exp += Number(d.pick_express_tos);
@@ -131,7 +153,7 @@ export default function DashboardOverviewPage() {
       }
     });
 
-    // Zpracování Packingu
+    // Zpracování Packingu pro tabulky a KPI
     packData.forEach(d => {
       const hus = Number(d.pack_hus);
       const ks = Number(d.pack_qty);
@@ -141,23 +163,13 @@ export default function DashboardOverviewPage() {
       packKs += ks;
       packOpsSet.add(d.operator);
 
-      // Leaderboard
       if (!packersMap.has(d.operator)) packersMap.set(d.operator, { name: d.operator, hus: 0, ks: 0 });
       packersMap.get(d.operator)!.hus += hus;
       packersMap.get(d.operator)!.ks += ks;
 
-      // Směny
       if (shiftAB === 'A') { shiftA.packHUs += hus; shiftA.packOps.add(d.operator); }
       if (shiftAB === 'B') { shiftB.packHUs += hus; shiftB.packOps.add(d.operator); }
 
-      // Graf
-      const dKey = new Date(d.report_date).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
-      if (!chartMap.has(dKey)) chartMap.set(dKey, { date: dKey, sortDate: d.report_date, pTos: 0, pHus: 0, pOpsSet: new Set(), paOpsSet: new Set() });
-      const cRow = chartMap.get(dKey)!;
-      cRow.pHus += hus;
-      cRow.paOpsSet.add(d.operator);
-
-      // Průměry
       if (shiftAB !== 'Mimo') {
         packAverages.shiftsSet.add(`${d.report_date}_${shiftAB}`);
         packAverages.opShifts += 1;
@@ -168,20 +180,54 @@ export default function DashboardOverviewPage() {
       }
     });
 
-    // Finální výpočty grafu
+    // GENERATOR DAT PRO GRAF (Zohledňuje, zda je vybrán 1 den = hodiny, nebo více = dny)
+    const chartMap = new Map<string, any>();
+
+    if (timeRange === 'day') {
+      // Hodinový režim
+      hourlyPickData.forEach(d => {
+        const h = d.hour_slot;
+        if (!chartMap.has(h)) chartMap.set(h, { date: h, sortDate: h, Pick_TO: 0, Pack_HU: 0, pOpsSet: new Set(), paOpsSet: new Set() });
+        const cRow = chartMap.get(h)!;
+        cRow.Pick_TO += Number(d.pick_tos);
+        cRow.pOpsSet.add(d.operator);
+      });
+      hourlyPackData.forEach(d => {
+        const h = d.hour_slot;
+        if (!chartMap.has(h)) chartMap.set(h, { date: h, sortDate: h, Pick_TO: 0, Pack_HU: 0, pOpsSet: new Set(), paOpsSet: new Set() });
+        const cRow = chartMap.get(h)!;
+        cRow.Pack_HU += Number(d.pack_hus);
+        cRow.paOpsSet.add(d.operator);
+      });
+    } else {
+      // Denní režim
+      pickData.forEach(d => {
+        const dKey = new Date(d.report_date).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+        if (!chartMap.has(dKey)) chartMap.set(dKey, { date: dKey, sortDate: d.report_date, Pick_TO: 0, Pack_HU: 0, pOpsSet: new Set(), paOpsSet: new Set() });
+        chartMap.get(dKey)!.Pick_TO += Number(d.pick_tos);
+        chartMap.get(dKey)!.pOpsSet.add(d.operator);
+      });
+      packData.forEach(d => {
+        const dKey = new Date(d.report_date).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+        if (!chartMap.has(dKey)) chartMap.set(dKey, { date: dKey, sortDate: d.report_date, Pick_TO: 0, Pack_HU: 0, pOpsSet: new Set(), paOpsSet: new Set() });
+        chartMap.get(dKey)!.Pack_HU += Number(d.pack_hus);
+        chartMap.get(dKey)!.paOpsSet.add(d.operator);
+      });
+    }
+
     const finalChart = Array.from(chartMap.values())
       .sort((a, b) => a.sortDate.localeCompare(b.sortDate))
       .map(r => ({
         date: r.date,
-        Pick_TO: r.pTos,
-        Pack_HU: r.pHus,
+        Pick_TO: r.Pick_TO,
+        Pack_HU: r.Pack_HU,
         Pickerů: r.pOpsSet.size,
         Packerů: r.paOpsSet.size
       }));
 
     // Výpočty průměrů Pick
     const pickShifts = Math.max(1, pickAverages.shiftsSet.size);
-    const pickHours = pickShifts * 8; // Běžná 8hod směna
+    const pickHours = pickShifts * 8; 
     const pickTotalOps = Math.max(1, pickAverages.opShifts);
 
     const calcPickAvgs = (total: number) => ({
@@ -223,10 +269,10 @@ export default function DashboardOverviewPage() {
       pickers: Array.from(pickersMap.values()).sort((a,b) => b.tos - a.tos),
       packers: Array.from(packersMap.values()).sort((a,b) => b.hus - a.hus)
     };
-  }, [pickData, packData]);
+  }, [pickData, packData, hourlyPickData, hourlyPackData, timeRange]);
 
   if (loading) {
-    return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="w-8 h-8 text-blue-400 animate-spin" /></div>;
+    return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="w-8 h-8 text-indigo-400 animate-spin" /></div>;
   }
 
   if (error) {
@@ -235,7 +281,7 @@ export default function DashboardOverviewPage() {
         <AlertTriangle className="w-12 h-12 text-red-400 mx-auto" />
         <h2 className="text-xl font-bold text-white">Chyba při načítání dat</h2>
         <p className="text-white/60">{error}</p>
-        <button onClick={() => loadData(timeRange)} className="glass-button-primary mt-4">Zkusit znovu</button>
+        <button onClick={() => loadData(timeRange, dateValue)} className="glass-button-primary mt-4">Zkusit znovu</button>
       </div>
     );
   }
@@ -252,9 +298,22 @@ export default function DashboardOverviewPage() {
           <p className="text-white/40 text-sm mt-1">Celkové zhodnocení výkonu skladu, kapacit a úzkých hrdel.</p>
         </div>
         
-        <div className="flex items-center bg-white/5 p-1 rounded-xl border border-white/10">
+        <div className="flex items-center bg-white/5 p-1 rounded-xl border border-white/10 flex-wrap gap-1">
+          <input
+             type="date"
+             value={dateValue}
+             onChange={(e) => {
+               setDateValue(e.target.value);
+               setTimeRange('day');
+             }}
+             onClick={(e) => {
+               if ('showPicker' in e.target) (e.target as any).showPicker();
+             }}
+             className={`px-3 py-1.5 rounded-lg text-sm font-bold focus:outline-none cursor-pointer transition-all ${timeRange === 'day' ? 'bg-indigo-500 text-white shadow-lg' : 'bg-transparent text-indigo-300 hover:text-indigo-200 hover:bg-white/5'}`}
+             title="Zvolte konkrétní den"
+          />
           {[ 
-            {id: 'today', label: 'Dnes'}, {id: '7d', label: '7 Dní'}, 
+            {id: '7d', label: '7 Dní'}, 
             {id: '30d', label: '30 Dní'}, {id: '90d', label: '90 Dní'}, 
             {id: 'ytd', label: 'Letos'}, {id: 'all', label: 'Vše'} 
           ].map(r => (
@@ -440,7 +499,8 @@ export default function DashboardOverviewPage() {
       {/* VÝVOJ CELKOVÉHO OBJEMU S OPERÁTORY */}
       <div className="glass-panel p-6">
         <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-indigo-400" /> Vývoj celkového objemu a zapojení operátorů
+          <TrendingUp className="w-5 h-5 text-indigo-400" /> 
+          Vývoj celkového objemu a zapojení operátorů {timeRange === 'day' ? '(Hodinový rozpad)' : ''}
         </h3>
         <p className="text-xs text-white/40 mb-6">Porovnání zátěže (TO/HU - sloupce) vůči počtu pracujících lidí (čáry).</p>
         <div className="h-[350px] w-full">
@@ -453,8 +513,8 @@ export default function DashboardOverviewPage() {
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', borderColor: '#ffffff10', borderRadius: '10px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
                 <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} />
                 
-                <Bar yAxisId="left" dataKey="Pick_TO" name="Objem Picking (TO)" fill="#3b82f6" radius={[4,4,0,0]} barSize={12} />
-                <Bar yAxisId="left" dataKey="Pack_HU" name="Objem Packing (HU)" fill="#a855f7" radius={[4,4,0,0]} barSize={12} />
+                <Bar yAxisId="left" dataKey="Pick_TO" name="Objem Picking (TO)" fill="#3b82f6" radius={[4,4,0,0]} barSize={timeRange === 'day' ? 24 : 12} />
+                <Bar yAxisId="left" dataKey="Pack_HU" name="Objem Packing (HU)" fill="#a855f7" radius={[4,4,0,0]} barSize={timeRange === 'day' ? 24 : 12} />
                 
                 <Line yAxisId="right" type="monotone" dataKey="Pickerů" name="Počet Pickerů" stroke="#93c5fd" strokeWidth={3} dot={{r:3}} />
                 <Line yAxisId="right" type="monotone" dataKey="Packerů" name="Počet Packerů" stroke="#d8b4fe" strokeWidth={3} dot={{r:3}} />
